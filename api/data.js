@@ -69,9 +69,10 @@ module.exports = async (req, res) => {
                   ${PARTNER_NAME}
          ORDER BY month, arr DESC`),
 
-      // 2. Total Rillet CW ARR by close month  →  % of revenue chart denominator
+      // 2. Total Rillet CW ARR + deal count by close month  →  % of revenue + avg deal size
       Q(`SELECT FORMAT([CloseDate],'yyyy-MM') as month,
-                SUM([cARR__c]) as arr
+                SUM([cARR__c]) as arr,
+                COUNT(*) as deals
          FROM [${CONN}].[Salesforce].[Opportunity]
          WHERE [StageName] = 'Closed Won'
            AND [CloseDate] >= '${START_DATE}'

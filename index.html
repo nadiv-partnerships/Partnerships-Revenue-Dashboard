@@ -326,6 +326,21 @@
 
 </div>
 
+<!-- Avg cARR per Deal: Partner vs Rillet -->
+<div class="chart-card">
+  <div class="chart-header">
+    <div>
+      <div class="chart-title">Avg cARR per Deal — Partner vs. Rillet</div>
+      <div class="chart-subtitle">Closed Won · partner-sourced deals vs. all Rillet deals · by close month</div>
+    </div>
+    <div class="legend-row">
+      <div class="legend-item"><div class="legend-dot" style="background:#6366f1"></div>Partner</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#475569"></div>Rillet overall</div>
+    </div>
+  </div>
+  <div class="chart-wrap" style="height:240px"><canvas id="avgDealChart"></canvas></div>
+</div>
+
 <!-- Partner Revenue % of Rillet Revenue -->
 <div class="chart-card">
   <div class="chart-header">
@@ -1090,6 +1105,75 @@ function renderPlTypeTable(key) {
   }).join('');
 }
 
+// ─────────────────────────────────────────────
+// AVG cARR PER DEAL — PARTNER VS RILLET
+// ─────────────────────────────────────────────
+function initAvgDealChart() {
+  const existing = Chart.getChart(document.getElementById('avgDealChart'));
+  if (existing) existing.destroy();
+  if (!raw.length || !_rilletData.length) return;
+
+  // Build per-month avg cARR: partner from raw, rillet from _rilletData
+  const months = [...new Set([...raw.map(r => r.month), ..._rilletData.map(r => r.month)])].sort();
+  const labels = months.map(monthLabel);
+
+  const partnerAvg = months.map(m => {
+    const r = raw.find(d => d.month === m);
+    return (r && r.deals > 0) ? Math.round(r.cARR / r.deals) : null;
+  });
+  const rilletAvg = months.map(m => {
+    const r = _rilletData.find(d => d.month === m);
+    return (r && r.deals > 0) ? Math.round(r.arr / r.deals) : null;
+  });
+
+  new Chart(document.getElementById('avgDealChart').getContext('2d'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Partner',
+          data: partnerAvg,
+          borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.08)',
+          borderWidth: 2.5, fill: true, tension: 0.4, spanGaps: false,
+          pointBackgroundColor: '#6366f1', pointBorderColor: '#0a0d14',
+          pointBorderWidth: 2, pointRadius: 5, pointHoverRadius: 7,
+        },
+        {
+          label: 'Rillet overall',
+          data: rilletAvg,
+          borderColor: '#475569', backgroundColor: 'transparent',
+          borderWidth: 2, borderDash: [4, 4], fill: false, tension: 0.4, spanGaps: false,
+          pointBackgroundColor: '#475569', pointBorderColor: '#0a0d14',
+          pointBorderWidth: 2, pointRadius: 4, pointHoverRadius: 6,
+        },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          ...tooltipDefaults(),
+          callbacks: {
+            label: ctx => ctx.parsed.y != null
+              ? ` ${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString()}`
+              : null,
+          }
+        }
+      },
+      scales: {
+        ...scaleDefaults(),
+        y: {
+          ...scaleDefaults().y, min: 0,
+          ticks: { ...scaleDefaults().y.ticks, callback: v => '$' + (v >= 1000 ? (v/1000).toFixed(0) + 'K' : v) }
+        }
+      }
+    }
+  });
+}
+
 // Pipeline line chart
 function initPipelineChart() {
   const existing = Chart.getChart(document.getElementById('pipelineChart'));
@@ -1097,17 +1181,15 @@ function initPipelineChart() {
   if (!plChartData.length) return;
 
   const today = new Date();
-  const curYear = today.getFullYear();
-  const curMon1 = today.getMonth() + 1;
-  const curMonth = curYear + '-' + String(curMon1).padStart(2,'0');
-  const daysInMonth = new Date(curYear, curMon1, 0).getDate();
+  const curMonth = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0');
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth()+1, 0).getDate();
   const dayOfMonth = today.getDate();
 
   const months = plChartData.map(r => r.month);
   const dynLabels = months.map(monthLabel);
   const curIdx = months.indexOf(curMonth);
   const curArr = curIdx >= 0 ? plChartData[curIdx].arr : null;
-  const PROJ = curArr ? eomProject(curArr, dayOfMonth, daysInMonth, curYear, curMon1) : null;
+  const PROJ = curArr ? Math.round(curArr * (daysInMonth / dayOfMonth)) : null;
 
   const allLabels = PROJ ? [...dynLabels, monthLabel(curMonth) + ' (proj)'] : dynLabels;
   const actualData = [...plChartData.map(d => d.arr), ...(PROJ ? [null] : [])];
@@ -2082,7 +2164,7 @@ async function loadDashboard() {
     lbRows = (data.lb || []).map(r => ({ month: r.month, partner: r.partner, arr: +r.arr, deals: +r.deals }));
     plRows = (data.pl || []).map(r => ({ month: r.month, partner: r.partner, arr: +r.arr, opps: +r.opps }));
     plChartData = (data.plChart || []).map(r => ({ month: r.month, arr: +r.arr, cnt: +r.cnt }));
-    _rilletData   = (data.rillet || []).map(r => ({ month: r.month, arr: +r.arr }));
+    _rilletData   = (data.rillet || []).map(r => ({ month: r.month, arr: +r.arr, deals: +(r.deals||0) }));
     _referralData = (data.referral || []).map(r => ({ month: r.month, partners: +r.partners }));
 
     // Populate new data vars
@@ -2113,6 +2195,7 @@ async function loadDashboard() {
     // Init all data-driven charts & tables
     initMainChart();
     initTypeTable();
+    initAvgDealChart();
     initLeaderboard();
     initPipelineChart();
     initPipelineType();
