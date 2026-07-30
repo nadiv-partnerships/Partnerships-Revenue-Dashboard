@@ -88,8 +88,8 @@ module.exports = async (req, res) => {
          GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM')
          ORDER BY month`),
 
-      // 4. Open pipeline by CloseDate + partner  →  plRows / pipeline type table
-      Q(`SELECT FORMAT(o.[CloseDate],'yyyy-MM') as month,
+      // 4. Open pipeline by CreatedDate + partner  →  plRows / pipeline type table / originated leaderboard
+      Q(`SELECT FORMAT(o.[CreatedDate],'yyyy-MM') as month,
                 a.[Name] as partner,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as opps
@@ -98,11 +98,11 @@ module.exports = async (req, res) => {
                 ON o.[Relevant_Partner__c] = a.[Id]
          WHERE o.[StageName] NOT IN ('Closed Won','Closed Lost')
            AND o.[LeadSource] IN ${PARTNER_SOURCES}
-           AND o.[CloseDate] >= '${START_DATE}'
+           AND o.[CreatedDate] >= '${START_DATE}'
            AND o.[CloseDate] >= o.[CreatedDate]
            AND o.[Relevant_Partner__c] IS NOT NULL
            AND o.[Relevant_Partner__c] NOT LIKE '0018a%'
-         GROUP BY FORMAT(o.[CloseDate],'yyyy-MM'), a.[Name]
+         GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM'), a.[Name]
          ORDER BY month, arr DESC`),
 
       // 5. Distinct active partners per create month  →  referral activity chart
@@ -117,12 +117,61 @@ module.exports = async (req, res) => {
          ORDER BY month`),
     ]);
 
+    const [splitRes, cohortRes, allDealsRes] = await Promise.all([
+
+      // 6. All opps by create month + inbound/resell → split chart
+      Q(`SELECT FORMAT(o.[CreatedDate],'yyyy-MM') as month,
+                CASE WHEN o.[LeadSource] = 'Partner - Resell' THEN 'resell' ELSE 'inbound' END as type,
+                COUNT(*) as deals,
+                SUM(o.[cARR__c]) as arr
+         FROM [${CONN}].[Salesforce].[Opportunity] o
+         WHERE o.[LeadSource] IN ${PARTNER_SOURCES}
+           AND o.[CreatedDate] >= '${START_DATE}'
+           AND o.[CloseDate] >= o.[CreatedDate]
+           AND o.[Relevant_Partner__c] IS NOT NULL
+           AND o.[Relevant_Partner__c] NOT LIKE '0018a%'
+         GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM'),
+                  CASE WHEN o.[LeadSource] = 'Partner - Resell' THEN 'resell' ELSE 'inbound' END
+         ORDER BY month`),
+
+      // 7. CW by cohort month + close month → cohort velocity chart
+      Q(`SELECT FORMAT(o.[CreatedDate],'yyyy-MM') as cohort_month,
+                FORMAT(o.[CloseDate],'yyyy-MM') as close_month,
+                COUNT(*) as deals
+         FROM [${CONN}].[Salesforce].[Opportunity] o
+         WHERE o.[StageName] = 'Closed Won'
+           AND o.[LeadSource] IN ${PARTNER_SOURCES}
+           AND o.[CreatedDate] >= '${START_DATE}'
+           AND o.[CloseDate] >= o.[CreatedDate]
+           AND o.[Relevant_Partner__c] IS NOT NULL
+           AND o.[Relevant_Partner__c] NOT LIKE '0018a%'
+         GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM'), FORMAT(o.[CloseDate],'yyyy-MM')
+         ORDER BY cohort_month, close_month`),
+
+      // 8. All opps (all stages) individual records → funnel table + pipeline accordion
+      Q(`SELECT o.[Id], o.[Name], o.[StageName], o.[cARR__c], o.[LeadSource],
+                a.[Name] as partner,
+                FORMAT(o.[CreatedDate],'yyyy-MM') as create_month,
+                FORMAT(o.[CloseDate],'yyyy-MM') as close_month
+         FROM [${CONN}].[Salesforce].[Opportunity] o
+         LEFT JOIN [${CONN}].[Salesforce].[Account] a ON o.[Relevant_Partner__c] = a.[Id]
+         WHERE o.[LeadSource] IN ${PARTNER_SOURCES}
+           AND o.[CreatedDate] >= '${START_DATE}'
+           AND o.[CloseDate] >= o.[CreatedDate]
+           AND o.[Relevant_Partner__c] IS NOT NULL
+           AND o.[Relevant_Partner__c] NOT LIKE '0018a%'
+         ORDER BY o.[CloseDate], o.[cARR__c] DESC`),
+    ]);
+
     res.status(200).json({
-      lb:          lbRes.recordset,       // [{month, partner, arr, deals}]
-      rillet:      rilletRes.recordset,   // [{month, arr}]
-      plChart:     plChartRes.recordset,  // [{month, arr, cnt}]  — CreatedDate
-      pl:          plRes.recordset,       // [{month, partner, arr, opps}]
-      referral:    referralRes.recordset, // [{month, partners}]
+      lb:          lbRes.recordset,
+      rillet:      rilletRes.recordset,
+      plChart:     plChartRes.recordset,
+      pl:          plRes.recordset,
+      referral:    referralRes.recordset,
+      split:       splitRes.recordset,    // [{month, type, deals, arr}]
+      cohort:      cohortRes.recordset,   // [{cohort_month, close_month, deals}]
+      allDeals:    allDealsRes.recordset, // [{id, name, stage, arr, partner, create_month, close_month}]
       generatedAt: new Date().toISOString(),
     });
 

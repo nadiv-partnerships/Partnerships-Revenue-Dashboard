@@ -683,6 +683,30 @@ const PARTNER_TYPES = {
   'Warp':'Technology Partner',
   'van den Boom & Associates':'Accounting & Advisory',
   'Silverton Partners':'Private Equity / VC',
+  'Audax Private Equity':'Private Equity / VC',
+  'Optifi Ltd':'Accounting & Advisory',
+  'Ethos Capital':'Private Equity / VC',
+  'SPRCHRGR':'Accounting & Advisory',
+  'Blackstone':'Private Equity / VC',
+  'Turn/River Partners':'Private Equity / VC',
+  'Cypress Ridge Capital':'Private Equity / VC',
+  'Entrepreneur First':'Private Equity / VC',
+  'Updata Partners':'Private Equity / VC',
+  '1060 Services':'Accounting & Advisory',
+  'Accelerant FTS':'Accounting & Advisory',
+  'Bregal Sagemount':'Private Equity / VC',
+  'Cryptoworth':'Technology Partner',
+  'Elevate Capital':'Private Equity / VC',
+  'Flux Analytics':'Technology Partner',
+  'Kleiner Perkins':'Private Equity / VC',
+  'Newman Certified Public Accountant, PC':'Accounting & Advisory',
+  'Primary Venture Partners':'Private Equity / VC',
+  'Redhill Business Analytics':'Accounting & Advisory',
+  'Riveron':'Accounting & Advisory',
+  'Sikich':'Accounting & Advisory',
+  'SolomonEdwards':'Accounting & Advisory',
+  'Strada Partners':'Private Equity / VC',
+  'Trusteer Financial':'Accounting & Advisory',
 };
 const TYPE_COLORS = {
   'Accounting & Advisory': '#a5b4fc',
@@ -1091,9 +1115,66 @@ function initPipelineType() {
 // ─────────────────────────────────────────────
 // PIPELINE FUNNEL CONVERSION TABLE
 // ─────────────────────────────────────────────
+let _allDeals = [];
+
+function initFunnelTable() {
+  // Stage key mapping
+  const STAGE_KEY = {
+    '1 - Qualification':'qual','2 - Discovery':'disc',
+    '3 - Technical Alignment':'align','4 - Solution Validation':'solval',
+    '5 - Negotiation':'neg','6 - Verbal Commit':'verbal',
+    'Closed Won':'won','Closed Lost':'lost'
+  };
+  // Partner type key mapping
+  const TYPE_KEY = {
+    'Accounting & Advisory':'acc','Private Equity / VC':'pe','Technology Partner':'tech'
+  };
+
+  // Compute D object from _allDeals
+  function buildD(deals) {
+    const empty = () => ({qual:0,disc:0,align:0,solval:0,neg:0,verbal:0,won:0,lost:0});
+    const months = [...new Set(deals.map(d => d.create_month))].sort();
+    const MONTH_ABBR = {
+      '01':'jan','02':'feb','03':'mar','04':'apr','05':'may','06':'jun',
+      '07':'jul','08':'aug','09':'sep','10':'oct','11':'nov','12':'dec'
+    };
+    const result = { ytd_all:empty(), ytd_acc:empty(), ytd_pe:empty(), ytd_tech:empty() };
+    months.forEach(m => {
+      const abbr = MONTH_ABBR[m.split('-')[1]] || m.split('-')[1];
+      result[abbr+'_all'] = empty();
+      result[abbr+'_acc'] = empty();
+      result[abbr+'_pe']  = empty();
+      result[abbr+'_tech']= empty();
+    });
+    deals.forEach(d => {
+      const sk = STAGE_KEY[d.StageName || d.stage];
+      if (!sk) return;
+      const abbr = MONTH_ABBR[d.create_month.split('-')[1]];
+      const ptype = PARTNER_TYPES[d.partner];
+      const tk = ptype ? TYPE_KEY[ptype] : null;
+      // YTD
+      if (result['ytd_all']) result['ytd_all'][sk]++;
+      if (tk && result['ytd_'+tk]) result['ytd_'+tk][sk]++;
+      // Month
+      if (abbr && result[abbr+'_all']) result[abbr+'_all'][sk]++;
+      if (abbr && tk && result[abbr+'_'+tk]) result[abbr+'_'+tk][sk]++;
+    });
+    return { D: result, months };
+  }
+
+  const { D, months } = buildD(_allDeals);
+
+  const MONTH_ABBR = {
+    '01':'jan','02':'feb','03':'mar','04':'apr','05':'may','06':'jun',
+    '07':'jul','08':'aug','09':'sep','10':'oct','11':'nov','12':'dec'
+  };
+
+  const dynPeriods = [
+    { key:'ytd', label:'YTD' },
+    ...[...months].reverse().map(m => ({ key: MONTH_ABBR[m.split('-')[1]], label: monthLabel(m) }))
+  ];
+
 (function() {
-  // Data: deals created in each period, by channel, showing current stage
-  // Source: Salesforce Opportunity created_month × LeadSource × StageName
   const STAGES = [
     { key:'qual',   label:'1 · Qualification',        color:'#475569' },
     { key:'disc',   label:'2 · Discovery',             color:'#6366f1' },
@@ -1105,47 +1186,7 @@ function initPipelineType() {
     { key:'lost',   label:'Closed Lost',               color:'#ef4444' },
   ];
 
-  // Raw data: { qual, disc, align, solval, neg, verbal, won, lost }
-  const D = {
-    'ytd_all':  { qual:79, disc:30, align:22, solval:12, neg:3, verbal:2, won:51, lost:59 },
-    'ytd_acc':  { qual:30, disc:13, align:7,  solval:2, neg:0, verbal:1, won:19, lost:11 },
-    'ytd_pe':   { qual:28, disc:10, align:5,  solval:3, neg:1, verbal:0, won:9,  lost:12 },
-    'ytd_tech': { qual:23, disc:6,  align:3,  solval:1, neg:1, verbal:0, won:4,  lost:8  },
-    'jan_all':  { qual:0,  disc:0,  align:0,  solval:0, neg:0, verbal:0, won:3,  lost:3  },
-    'jan_acc':  { qual:0,  disc:0,  align:0,  solval:0, neg:0, verbal:0, won:1,  lost:2  },
-    'jan_pe':   { qual:0,  disc:0,  align:0,  solval:0, neg:0, verbal:0, won:1,  lost:0  },
-    'jan_tech': { qual:0,  disc:0,  align:0,  solval:0, neg:0, verbal:0, won:1,  lost:1  },
-    'feb_all':  { qual:6,  disc:2,  align:3,  solval:3, neg:0, verbal:0, won:9,  lost:21 },
-    'feb_acc':  { qual:1,  disc:0,  align:0,  solval:2, neg:0, verbal:0, won:3,  lost:5  },
-    'feb_pe':   { qual:4,  disc:2,  align:1,  solval:0, neg:0, verbal:0, won:5,  lost:6  },
-    'feb_tech': { qual:4,  disc:1,  align:1,  solval:0, neg:0, verbal:0, won:0,  lost:3  },
-    'mar_all':  { qual:7,  disc:2,  align:3,  solval:1, neg:1, verbal:1, won:19, lost:11 },
-    'mar_acc':  { qual:1,  disc:2,  align:3,  solval:0, neg:0, verbal:1, won:8,  lost:2  },
-    'mar_pe':   { qual:5,  disc:2,  align:0,  solval:2, neg:1, verbal:0, won:1,  lost:4  },
-    'mar_tech': { qual:5,  disc:0,  align:1,  solval:0, neg:0, verbal:0, won:2,  lost:3  },
-    'apr_all':  { qual:15, disc:5,  align:7,  solval:5, neg:0, verbal:0, won:6,  lost:14 },
-    'apr_acc':  { qual:10, disc:5,  align:2,  solval:0, neg:0, verbal:0, won:3,  lost:1  },
-    'apr_pe':   { qual:6,  disc:4,  align:3,  solval:1, neg:0, verbal:0, won:1,  lost:2  },
-    'apr_tech': { qual:7,  disc:2,  align:1,  solval:0, neg:1, verbal:0, won:0,  lost:1  },
-    'may_all':  { qual:17, disc:8,  align:8,  solval:1, neg:1, verbal:0, won:8,  lost:7  },
-    'may_acc':  { qual:15, disc:5,  align:1,  solval:0, neg:0, verbal:0, won:3,  lost:1  },
-    'may_pe':   { qual:13, disc:1,  align:1,  solval:0, neg:0, verbal:0, won:0,  lost:0  },
-    'may_tech': { qual:3,  disc:1,  align:0,  solval:0, neg:0, verbal:0, won:0,  lost:0  },
-    'jun_all':  { qual:34, disc:13, align:1,  solval:2, neg:1, verbal:1, won:6,  lost:3  },
-    'jun_acc':  { qual:3,  disc:1,  align:1,  solval:0, neg:0, verbal:0, won:1,  lost:0  },
-    'jun_pe':   { qual:0,  disc:1,  align:0,  solval:0, neg:0, verbal:0, won:1,  lost:0  },
-    'jun_tech': { qual:4,  disc:2,  align:0,  solval:1, neg:0, verbal:0, won:1,  lost:0  },
-  };
-
-  const PERIODS = [
-    { key:'ytd', label:'YTD' },
-    { key:'jun', label:"Jun '26" },
-    { key:'may', label:"May '26" },
-    { key:'apr', label:"Apr '26" },
-    { key:'mar', label:"Mar '26" },
-    { key:'feb', label:"Feb '26" },
-    { key:'jan', label:"Jan '26" },
-  ];
+  const PERIODS = dynPeriods;
   const CHANNELS = [
     { key:'all',  label:'All' },
     { key:'acc',  label:'Accounting' },
@@ -1233,79 +1274,89 @@ function initPipelineType() {
   }
 
   // Build period toggle
-  (function() {
-    const el = document.getElementById('funnelPeriodToggle');
-    PERIODS.forEach(p => {
-      const btn = document.createElement('button');
-      btn.className = 'toggle-btn' + (p.key === activePeriod ? ' active' : '');
-      btn.textContent = p.label;
-      btn.addEventListener('click', () => {
-        activePeriod = p.key;
-        el.querySelectorAll('.toggle-btn').forEach(b => b.classList.toggle('active', b.textContent === p.label && b === btn));
-        // update all buttons properly
-        el.querySelectorAll('.toggle-btn').forEach(b => {
-          b.classList.toggle('active', PERIODS.find(x=>x.label===b.textContent)?.key === activePeriod);
-        });
-        render();
+  const funnelPeriodEl = document.getElementById('funnelPeriodToggle');
+  funnelPeriodEl.innerHTML = '';
+  PERIODS.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'toggle-btn' + (p.key === activePeriod ? ' active' : '');
+    btn.textContent = p.label;
+    btn.addEventListener('click', () => {
+      activePeriod = p.key;
+      funnelPeriodEl.querySelectorAll('.toggle-btn').forEach(b => {
+        b.classList.toggle('active', PERIODS.find(x=>x.label===b.textContent)?.key === activePeriod);
       });
-      el.appendChild(btn);
+      render();
     });
-  })();
+    funnelPeriodEl.appendChild(btn);
+  });
 
   // Build channel toggle
-  (function() {
-    const el = document.getElementById('funnelChannelToggle');
-    CHANNELS.forEach(c => {
-      const btn = document.createElement('button');
-      btn.className = 'toggle-btn' + (c.key === activeChannel ? ' active' : '');
-      btn.textContent = c.label;
-      btn.addEventListener('click', () => {
-        activeChannel = c.key;
-        el.querySelectorAll('.toggle-btn').forEach(b => {
-          b.classList.toggle('active', CHANNELS.find(x=>x.label===b.textContent)?.key === activeChannel);
-        });
-        render();
+  const funnelChannelEl = document.getElementById('funnelChannelToggle');
+  funnelChannelEl.innerHTML = '';
+  CHANNELS.forEach(c => {
+    const btn = document.createElement('button');
+    btn.className = 'toggle-btn' + (c.key === activeChannel ? ' active' : '');
+    btn.textContent = c.label;
+    btn.addEventListener('click', () => {
+      activeChannel = c.key;
+      funnelChannelEl.querySelectorAll('.toggle-btn').forEach(b => {
+        b.classList.toggle('active', CHANNELS.find(x=>x.label===b.textContent)?.key === activeChannel);
       });
-      el.appendChild(btn);
+      render();
     });
-  })();
+    funnelChannelEl.appendChild(btn);
+  });
 
   render();
-})();
+})(); // end inner IIFE
+
+} // end initFunnelTable
 
 // ─────────────────────────────────────────────
 // INBOUND VS RESELL SPLIT CHART
 // ─────────────────────────────────────────────
-const splitRaw = {
-  deals: { inbound:[5,4,3,5,7,12], resell:[4,1,2,0,2,2] },
-  arr:   { inbound:[87100,87950,40200,146250,256250,413010], resell:[43800,18000,15600,0,24000,35000] },
-};
-
+let _splitData = [];
 let splitActiveKey = 'deals';
+let _splitChart = null;
 
-(function() {
+function initSplitChart() {
+  if (_splitChart) { _splitChart.destroy(); _splitChart = null; }
+  if (!_splitData.length) return;
+
+  const months = [...new Set(_splitData.map(r => r.month))].sort();
+  const labels = months.map(monthLabel);
+
+  function getArrays(key) {
+    const inbound = months.map(m => {
+      const r = _splitData.find(d => d.month === m && d.type === 'inbound');
+      return r ? +r[key] : 0;
+    });
+    const resell = months.map(m => {
+      const r = _splitData.find(d => d.month === m && d.type === 'resell');
+      return r ? +r[key] : 0;
+    });
+    return { inbound, resell };
+  }
+
   function buildDatasets(key) {
+    const { inbound, resell } = getArrays(key);
     return [
       {
-        label: 'Inbound - Partner',
-        data: splitRaw[key].inbound,
-        backgroundColor: 'rgba(99,102,241,0.75)',
-        borderColor: '#6366f1', borderWidth: 1,
-        borderRadius: 0, stack: 'a',
+        label: 'Inbound - Partner', data: inbound,
+        backgroundColor: 'rgba(99,102,241,0.75)', borderColor: '#6366f1',
+        borderWidth: 1, borderRadius: 0, stack: 'a',
       },
       {
-        label: 'Partner - Resell',
-        data: splitRaw[key].resell,
-        backgroundColor: 'rgba(16,185,129,0.75)',
-        borderColor: '#10b981', borderWidth: 1,
-        borderRadius: 4, stack: 'a',
+        label: 'Partner - Resell', data: resell,
+        backgroundColor: 'rgba(16,185,129,0.75)', borderColor: '#10b981',
+        borderWidth: 1, borderRadius: 4, stack: 'a',
       }
     ];
   }
 
-  const chart = new Chart(document.getElementById('splitChart').getContext('2d'), {
+  _splitChart = new Chart(document.getElementById('splitChart').getContext('2d'), {
     type: 'bar',
-    data: { labels: ["Jan '26","Feb '26","Mar '26","Apr '26","May '26","Jun '26"], datasets: buildDatasets('deals') },
+    data: { labels, datasets: buildDatasets('deals') },
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode:'index', intersect:false },
@@ -1325,17 +1376,14 @@ let splitActiveKey = 'deals';
             },
             footer: items => {
               const total = items.reduce((s,i) => s + i.parsed.y, 0);
-              return splitActiveKey === 'arr'
-                ? `Total: $${total.toLocaleString()}`
-                : `Total: ${total} deals`;
+              return splitActiveKey === 'arr' ? `Total: $${total.toLocaleString()}` : `Total: ${total} deals`;
             }
           }
         }
       },
       scales: {
         x: { ...scaleDefaults().x, stacked: true },
-        y: {
-          ...scaleDefaults().y, stacked: true, min: 0,
+        y: { ...scaleDefaults().y, stacked: true, min: 0,
           ticks: { ...scaleDefaults().y.ticks,
             callback: v => splitActiveKey === 'arr' ? '$'+(v>=1000?(v/1000).toFixed(0)+'K':v) : v
           }
@@ -1344,59 +1392,85 @@ let splitActiveKey = 'deals';
     }
   });
 
+  document.getElementById('splitToggle').onclick = null;
   document.getElementById('splitToggle').addEventListener('click', e => {
     const btn = e.target.closest('.toggle-btn');
     if (!btn) return;
     const key = btn.dataset.key;
     splitActiveKey = key;
     document.querySelectorAll('#splitToggle .toggle-btn').forEach(b => b.classList.toggle('active', b === btn));
-    chart.data.datasets = buildDatasets(key);
-    chart.options.scales.y.ticks.callback = v =>
+    _splitChart.data.datasets = buildDatasets(key);
+    _splitChart.options.scales.y.ticks.callback = v =>
       key === 'arr' ? '$'+(v>=1000?(v/1000).toFixed(0)+'K':v) : v;
-    chart.update();
+    _splitChart.update();
   });
-})();
+}
 
 // ─────────────────────────────────────────────
 // DEAL CLOSE VELOCITY COHORT CHART
 // ─────────────────────────────────────────────
-(function() {
-  // Denominator = total deals generated that month
-  // Numerator   = cumulative closed won, filtered to close_month >= cohort_month
-  const cohortRaw = {
-    "Jan '26": { total:6,  M0:2, M1:1, M2:0 },
-    "Feb '26": { total:38, M0:3, M1:2, M2:2 },
-    "Mar '26": { total:43, M0:2, M1:2, M2:1 },
-    "Apr '26": { total:50, M0:1, M1:2, M2:0 },
-    "May '26": { total:46, M0:4, M1:0, M2:0 }, // in progress
-    "Jun '26": { total:27, M0:1, M1:0, M2:0 }, // in progress
-  };
-  const COHORT_COLORS = ['#6366f1','#06b6d4','#10b981','#f59e0b','#ec4899'];
-  const X_LABELS = ['Same Month','+1 Month','+2 Months'];
+let _cohortData = [];
 
-  const datasets = Object.entries(cohortRaw).map(([label, d], i) => {
-    const buckets = [d.M0, d.M1, d.M2];
+function initCohortChart() {
+  const existing = Chart.getChart(document.getElementById('cohortChart'));
+  if (existing) existing.destroy();
+  if (!_cohortData.length || !_splitData.length) return;
+
+  // Total created per cohort month from split data
+  const totalByMonth = {};
+  _splitData.forEach(r => {
+    totalByMonth[r.month] = (totalByMonth[r.month] || 0) + +r.deals;
+  });
+
+  // CW wins per cohort: { cohort_month: { offset: count } }
+  const winsByOffset = {};
+  _cohortData.forEach(r => {
+    if (!winsByOffset[r.cohort_month]) winsByOffset[r.cohort_month] = {};
+    const cohortDate = new Date(r.cohort_month + '-01');
+    const closeDate  = new Date(r.close_month  + '-01');
+    const offset = (closeDate.getFullYear() - cohortDate.getFullYear()) * 12
+                 + (closeDate.getMonth()    - cohortDate.getMonth());
+    winsByOffset[r.cohort_month][offset] = (winsByOffset[r.cohort_month][offset] || 0) + +r.deals;
+  });
+
+  const cohortMonths = Object.keys(totalByMonth).sort();
+  const maxOffset = Math.max(...cohortMonths.map(m =>
+    Object.keys(winsByOffset[m] || {}).map(Number)
+  ).flat().concat([2]));
+
+  const X_LABELS = ['Same Month', ...Array.from({length: maxOffset}, (_,i) => `+${i+1} Month${i>0?'s':''}`)];
+  const COHORT_COLORS = ['#6366f1','#06b6d4','#10b981','#f59e0b','#ec4899','#f97316','#a855f7'];
+
+  const today = new Date();
+  const curMonth = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0');
+
+  const datasets = cohortMonths.map((m, i) => {
+    const total = totalByMonth[m] || 1;
+    const wins  = winsByOffset[m] || {};
+    const isCurrentMonth = m >= curMonth;
     let cum = 0;
-    const data = buckets.map((v, j) => {
-      cum += v;
-      const hasData = buckets.slice(j).some(x => x > 0);
-      if (!hasData && j > 0) return null;
-      return +(cum / d.total * 100).toFixed(1);
+    const data = X_LABELS.map((_, j) => {
+      cum += (wins[j] || 0);
+      // Null out future buckets (offset > months elapsed since cohort)
+      const now = new Date();
+      const cohortDate = new Date(m + '-01');
+      const elapsed = (now.getFullYear() - cohortDate.getFullYear()) * 12
+                    + (now.getMonth()    - cohortDate.getMonth());
+      if (j > elapsed) return null;
+      return +(cum / total * 100).toFixed(1);
     });
+    const label = monthLabel(m);
+    const color = COHORT_COLORS[i % COHORT_COLORS.length];
     return {
       label, data,
-      borderColor: COHORT_COLORS[i],
-      backgroundColor: 'transparent',
+      borderColor: color, backgroundColor: 'transparent',
       borderWidth: 2,
-      hidden: label === "Jan '26",  // Jan hidden by default
-      ...(label === "May '26" ? { borderDash: [5,4] } : {}),
-      pointBackgroundColor: COHORT_COLORS[i],
-      pointBorderColor: '#0a0d14',
+      hidden: i === 0,  // oldest cohort hidden by default
+      ...(isCurrentMonth ? { borderDash: [5,4] } : {}),
+      pointBackgroundColor: color, pointBorderColor: '#0a0d14',
       pointBorderWidth: 2,
       pointRadius: data.map(v => v !== null ? 5 : 0),
-      pointHoverRadius: 7,
-      tension: 0.3,
-      spanGaps: false,
+      pointHoverRadius: 7, tension: 0.3, spanGaps: false,
     };
   });
 
@@ -1420,8 +1494,9 @@ let splitActiveKey = 'deals';
     }
   });
 
-  // Build cohort toggle buttons (replace Chart.js legend)
+  // Build toggle buttons
   const toggleEl = document.getElementById('cohortToggle');
+  toggleEl.innerHTML = '';
   datasets.forEach((ds, i) => {
     const btn = document.createElement('button');
     btn.className = 'toggle-btn' + (ds.hidden ? '' : ' active');
@@ -1435,7 +1510,7 @@ let splitActiveKey = 'deals';
     });
     toggleEl.appendChild(btn);
   });
-})();
+}
 
 // ─────────────────────────────────────────────
 // PARTNER REVENUE % OF RILLET REVENUE
@@ -1553,795 +1628,81 @@ function initReferralChart() {
 // ─────────────────────────────────────────────
 // PIPELINE BY STAGE — ACCORDION
 // ─────────────────────────────────────────────
-(function() {
-  // Fields: [name, stage, partner, arr, leadSource, create_month_key, close_month_key (Closed Won only)]
-  // Source: Salesforce · Relevant_Partner__c set · YTD 2026 · refreshed 2026-06-04
-  const RAW = [
-    // ── 6 - Verbal Commit ──
-    ["Brightwheel - New Business 6/2026","6 - Verbal Commit","Principal Consulting Group",2000,"Inbound - Email Marketing","2026-02"],
-    ["sherpahq.ai - New Business 6/2026","6 - Verbal Commit","Connor Group",12000,"Inbound - Partner","2026-03"],
-    ["Community Health Plan Collaborative dba OneHealth - New Business 5/2026","6 - Verbal Commit","Runway",21000,"Inbound - Paid Search","2026-04"],
-    // ── 5 - Negotiation ──
-    ["CIVIE - New Business 6/2026","5 - Negotiation","Forvis Mazars US",28000,"Inbound - Paid Search","2026-02"],
-    ["CertifID - New Business 6/2026","5 - Negotiation","Ordway - Billing and Revenue Automation",29999,"Event - Webinar","2026-03"],
-    ["Manna Tree Partners - New Business 7/2026","Closed Won","Crest Rock Partners",43000,"Inbound - Partner","2026-03","2026-06"],
-    ["Excedr - New Business 6/2026","Closed Won","Raiz",15000,"Partner - Resell","2026-04","2026-06"],
-    ["Escalera Capital - New Business 6/2026","5 - Negotiation","Escalera Capital",50150,"Inbound - Paid Search","2026-05"],
-    // ── 4 - Solution Validation ──
-    ["PetScreening - New Business 7/2026","4 - Solution Validation","Volition Capital*",29999,"Cold Outbound","2026-01"],
-    ["Dost - New Business 6/2026","4 - Solution Validation","Ikon Partner",29999,"Inbound - Organic Search","2026-02"],
-    ["North Pole Security - New Business 3/2026","Closed Won","Attivo Partners",600,"Inbound - Partner","2026-02","2026-05"],
-    ["Transient AI - New Business 6/2026","Closed Won","John McCarthy",20000,"Partner - Resell","2026-06","2026-06"],
-    ["The Only Agency - New Business 7/2026","Closed Won","Armanino",35000,"Inbound - Partner","2026-02","2026-06"],
-    ["Moment - New Business 6/2026","4 - Solution Validation","Attivo Partners",30000,"Inbound - Partner","2026-02"],
-    ["AirWorks - New Business 6/2026","4 - Solution Validation","PSG Equity",32200,"Inbound - Partner","2026-03"],
-    ["Mainsail Partners - New Business 6/2026","4 - Solution Validation","Mainsail Partners",20000,"Inbound - Partner","2026-03"],
-    ["Modular - New Business 6/2026","4 - Solution Validation","Attivo Partners",3000,"Cold Outbound","2026-03"],
-    ["Kenect - New Business 6/2026","4 - Solution Validation","PSG Equity",5000,"Inbound","2026-03"],
-    ["Xenia - New Business 8/2026","4 - Solution Validation","PSG Equity",25500,"Inbound - Paid Search","2026-04"],
-    ["Procede Software - New Business 6/2026","4 - Solution Validation","Exit Point Partners",29999,"Inbound - Partner","2026-04"],
-    // ── 3 - Technical Alignment ──
-    ["Stay AI - New Business 6/2026","3 - Technical Alignment","Telescope Partners",29999,"Inbound - Partner","2026-02"],
-    ["Spark Advisors - New Business 7/2026","3 - Technical Alignment","Ramp",29999,"Inbound - Partner","2026-02"],
-    ["Black Kite - New Business 9/2026","3 - Technical Alignment","Volition Capital*",29999,"Cold Outbound","2026-03"],
-    ["Rx Redefined - New Business 4/2026","3 - Technical Alignment","Consero Global",15000,"Inbound - Partner","2026-03"],
-    ["Cortechs.ai - New Business 4/2026","3 - Technical Alignment","Consero Global",15000,"Inbound - Partner","2026-03"],
-    ["Wisq - New Business 6/2026","3 - Technical Alignment","Brex",24450,"Inbound - Partner","2026-03"],
-    ["Updater - New Business 4/2026","3 - Technical Alignment","Zanovoy",29999,"Partner - Resell","2026-03"],
-    ["Matter Labs - New Business 6/2026","3 - Technical Alignment","Attivo Partners",29999,"Inbound - Direct Traffic","2026-04"],
-    ["Traumasoft - New Business 6/2026","3 - Technical Alignment","Serent Capital",29999,"Inbound - Partner","2026-04"],
-    ["Fiddler AI - New Business 6/2026","3 - Technical Alignment","Insight Partners",29999,"Inbound - Partner","2026-04"],
-    ["Judi Health - New Business 6/2026","3 - Technical Alignment","Generation Investment Management",30000,"Inbound - Partner","2026-04"],
-    ["Roo Veterinary - New Business 6/2026","3 - Technical Alignment","Valorem Global Partners",40000,"Inbound - Partner","2026-04"],
-    ["Queen One - New Business 7/2026","3 - Technical Alignment","Scott Ackerman Consulting",29999,"Inbound - Partner","2026-04"],
-    ["Sonia Health - New Business 7/2026","3 - Technical Alignment","Abacum",29999,"Inbound - Partner","2026-04"],
-    ["BillerGenie - New Business 7/2026","3 - Technical Alignment","Radian Capital",29999,"Inbound - Partner","2026-05"],
-    ["AgentAstraAI - New Business 8/2026","Closed Won","Aprio",25000,"Inbound - Partner","2026-05","2026-06"],
-    ["Otelier - New Business 7/2026","3 - Technical Alignment","Cove Hill Partners",29999,"Inbound - Partner","2026-05"],
-    ["DATABASICS - New Business 6/2026","3 - Technical Alignment","Raiz",29999,"Partner - Resell","2026-05"],
-    // ── 2 - Discovery ──
-    ["Redpanda Data - New Business 7/2026","2 - Discovery","Ordway - Billing and Revenue Automation",5000,"Cold Outbound","2026-01"],
-    ["PPI - New Business 6/2026","2 - Discovery","Crest Rock Partners",29999,"Inbound - Partner","2026-02"],
-    ["Wisedocs Inc. - New Business 6/2026","2 - Discovery","Upflow",29999,"Inbound - Direct Traffic","2026-02"],
-    ["Dealerware - New Business 6/2026","2 - Discovery","Radian Capital",29999,"Outbound - Partner","2026-02"],
-    ["Latent - New Business 8/2026","2 - Discovery","Brex",29999,"Inbound - Partner","2026-02"],
-    ["Archy - New Business 6/2026","2 - Discovery","TCV",29999,"Inbound - Partner","2026-03"],
-    ["Virtuous - New Business 7/2026","2 - Discovery","Susquehanna Growth Equity",29999,"Outbound - Partner","2026-03"],
-    ["Merlin - New Business 6/2026","2 - Discovery","Landing Point",29999,"Inbound - Partner","2026-03"],
-    ["Chassi - New Business 6/2026","2 - Discovery","Armanino",29999,"Inbound - Partner","2026-03"],
-    ["GeoWealth - New Business 6/2026","2 - Discovery","Composition Capital",29999,"Inbound - Partner","2026-04"],
-    ["Supersonik.ai - New Business 6/2026","2 - Discovery","Ikon Partner",29999,"Inbound - Partner","2026-04"],
-    ["Togetherwork - New Business 7/2026","2 - Discovery","Armanino",29999,"Inbound - Partner","2026-04"],
-    ["crowdstreet-inc - New Business 6/2026","2 - Discovery","Stackpack",29999,"Inbound - Partner","2026-04"],
-    ["Solvd, Inc. - New Business 7/2026","2 - Discovery","Abacum",29999,"Inbound - Partner","2026-04"],
-    ["TJM Labs - New Business 7/2026","Closed Won","Arthur Ventures",45000,"Inbound - Partner","2026-04","2026-06"],
-    ["Osage Partners (Mgmt Co) - New Business 6/2026","2 - Discovery","Osage Partners",29999,"Inbound - Partner","2026-04"],
-    ["Solidion technologies - New Business 6/2026","2 - Discovery","Armanino",29999,"Inbound - Partner","2026-04"],
-    ["PharmaforceIQ - New Business 6/2026","2 - Discovery","Cherry Bekaert",29999,"Inbound - Organic Search","2026-04"],
-    ["OneChronos - New Business 6/2026","2 - Discovery","Aprio",29999,"Inbound - Partner","2026-04"],
-    ["Buburuza - New Business 8/2026","2 - Discovery","Tres Finance",29999,"Inbound - Partner","2026-04"],
-    ["LifeLoop - New Business 6/2026","2 - Discovery","Vista Equity Partners",29999,"Inbound - Partner","2026-04"],
-    ["Sovra - New Business 6/2026","2 - Discovery","KKR",29999,"Referral","2026-05"],
-    ["Mantel - New Business 6/2026","2 - Discovery","Wolf & Company",32000,"Inbound - Partner","2026-05"],
-    ["EverlyWell - New Business 8/2026","2 - Discovery","FIF Collective",29999,"Referral - Employee","2026-05"],
-    ["Vivodyne - New Business 12/2026","2 - Discovery","CFGI",30000,"Inbound - Partner","2026-05"],
-    ["Quizlet - New Business 8/2026","2 - Discovery","General Atlantic",29999,"Cold Outbound","2026-05"],
-    ["Cerbo - Opti - New Business 8/2026","2 - Discovery","Mainsail Partners",30000,"Cold Outbound","2026-05"],
-    ["Jda Tsg - New Business 6/2026","2 - Discovery","Accordion",29999,"Inbound - Partner","2026-05"],
-    ["Zenarate - New Business 9/2026","Closed Won","Volition Capital*",33750,"Inbound - Partner","2026-05","2026-06"],
-    ["Moxe Health - New Business 7/2026","2 - Discovery","CBIZ",29999,"Inbound - Partner","2026-05"],
-    ["Sharebite - New Business 7/2026","2 - Discovery","Raiz",29999,"Partner - Resell","2026-05"],
-    ["Levanta - New Business 7/2026","2 - Discovery","Volition Capital*",29999,"Inbound - Partner","2026-05"],
-    ["Counsel Health - New Business 7/2026","2 - Discovery","Positano Group",29999,"Inbound - Partner","2026-05"],
-    // ── 1 - Qualification ──
-    ["Dazos - New Business 4/2026","1 - Qualification","Radian Capital",29999,"Inbound - Partner","2026-02"],
-    ["The Services Companies - New Business 2/2026","1 - Qualification","Growth Elevated",29999,"Inbound - Partner","2026-02"],
-    ["PriceEasy AI - New Business 4/2026","1 - Qualification","Telescope Partners",29999,"Inbound - Partner","2026-02"],
-    ["Matx.com - New Business 4/2026","1 - Qualification","Aleph",29999,"Inbound - Partner","2026-02"],
-    ["CloudNine - New Business 6/2026","1 - Qualification","Crest Rock Partners",29999,"Inbound - Partner","2026-02"],
-    ["Definely - New Business 4/2026","1 - Qualification","Anrok",29999,"Inbound - Partner","2026-02"],
-    ["Imagen - New Business 4/2026","1 - Qualification","Brex",29999,"Inbound - Partner","2026-02"],
-    ["The Surplus Line Association of California (SLA) - New Business 6/2026","1 - Qualification","Brex",29999,"Inbound - Partner","2026-02"],
-    ["Pylon - New Business 2/2026","1 - Qualification","Brex",29999,"Inbound - Partner","2026-02"],
-    ["Ajax Health - New Business 6/2026","1 - Qualification","KKR",29999,"Outbound - Partner","2026-03"],
-    ["Sigma7 - New Business 5/2026","1 - Qualification","Kami Vision",30000,"Inbound - Partner","2026-03"],
-    ["Pine Crest School - New Business 6/2026","1 - Qualification","Armanino",29999,"Inbound - Partner","2026-03"],
-    ["PairSoft - New Business 6/2026","1 - Qualification","TA Associates",29999,"Outbound - Partner","2026-03"],
-    ["Qlik - New Business 6/2026","1 - Qualification","Thoma Bravo",29999,"Inbound - Partner","2026-03"],
-    ["Portside - New Business 6/2026","1 - Qualification","Vista Equity Partners",29999,"Cold Outbound","2026-03"],
-    ["Hyphen - New Business 6/2026","1 - Qualification","Doss",29999,"Inbound - Partner","2026-03"],
-    ["Glow Services - New Business 5/2026","1 - Qualification","Brex",29999,"Inbound - Partner","2026-03"],
-    ["Clutch - New Business 5/2026","1 - Qualification","Abacum",29999,"Inbound - Partner","2026-03"],
-    ["Try Your Best - New Business 5/2026","1 - Qualification","Tabs",29999,"Inbound - Partner","2026-03"],
-    ["Lumen Risk - New Business 4/2026","1 - Qualification","Vistria Group",29999,"Inbound - Partner","2026-03"],
-    ["Alacura - New Business 4/2026","1 - Qualification","Vistria Group",29999,"Inbound - Partner","2026-03"],
-    ["Marlin Equity Partners - New Business 6/2026","1 - Qualification","Marlin Equity Partners",29999,"Inbound - Partner","2026-04"],
-    ["Cove - New Business 6/2026","1 - Qualification","Berkshire Partners",29999,"Inbound - Partner","2026-04"],
-    ["Awardco - New Business 7/2026","1 - Qualification","Sixth Street Growth",29999,"Cold Outbound","2026-04"],
-    ["Embo - New Business 6/2026","1 - Qualification","Andreessen Horowitz",29999,"Inbound - Partner","2026-04"],
-    ["Forward Edge - New Business 6/2026","1 - Qualification","Ramp",29999,"Inbound - Partner","2026-04"],
-    ["xCures - New Business 6/2026","1 - Qualification","KongBasileConsulting",29999,"Inbound - Partner","2026-04"],
-    ["Lawtrades - New Business 8/2026","1 - Qualification","Abacum",29999,"Inbound - Partner","2026-04"],
-    ["Pulsar International Pty Limited - New Business 6/2026","1 - Qualification","Provenscale",30000,"Inbound - Partner","2026-04"],
-    ["True Lacrosse - New Business 5/2026","1 - Qualification","Provenscale",30000,"Inbound - Partner","2026-04"],
-    ["Cedar AI - New Business 6/2026","1 - Qualification","Ziegler & Associates",29999,"Inbound - Partner","2026-04"],
-    ["BetterCloud - New Business 7/2026","1 - Qualification","Abacum",29999,"Inbound - Partner","2026-04"],
-    ["Terrago Technologies - New Business 6/2026","1 - Qualification","Ordway - Billing and Revenue Automation",29999,"Inbound - Partner","2026-04"],
-    ["Buildcheck AI - New Business 6/2026","1 - Qualification","Telescope Partners",29999,"Inbound - Partner","2026-04"],
-    ["Baysora - New Business 8/2026","1 - Qualification","Baysora",29999,"Inbound - Partner","2026-04"],
-    ["CPGIO - New Business 5/2026","1 - Qualification","Zanovoy",29999,"Partner - Resell","2026-04"],
-    ["Intelycare - New Business 6/2026","1 - Qualification","John McCarthy",29999,"Inbound - Partner","2026-04"],
-    ["stilta - New Business 7/2026","1 - Qualification","Ikon Partner",29999,"Inbound - Partner","2026-04"],
-    ["Cortex - New Business 7/2026","1 - Qualification","Abacum",29999,"Inbound - Partner","2026-04"],
-    ["Marcom - New Business 7/2026","1 - Qualification","CBIZ",29999,"Inbound - Partner","2026-04"],
-    ["Bedrock AI - New Business 7/2026","1 - Qualification","Armanino",30000,"Inbound - Partner","2026-04"],
-    ["Hosted - New Business 6/2026","1 - Qualification","Creandum",29999,"Inbound - Partner","2026-04"],
-    ["Ninjio - New Business 12/2026","1 - Qualification","Gauge Capital",29999,"Inbound - Partner","2026-04"],
-    ["Reggora - New Business 7/2026","1 - Qualification","Ignition Consultants",30000,"Inbound - Partner","2026-04"],
-    ["Rootsy - New Business 6/2026","1 - Qualification","Kintsugi",29999,"Inbound - Partner","2026-04"],
-    ["RobCo - New Business 7/2026","1 - Qualification","Creandum",29999,"Inbound - Partner","2026-05"],
-    ["Suno - New Business 7/2026","1 - Qualification","Stripe",29999,"Inbound - Partner","2026-05"],
-    ["T-ROC Global - New Business 8/2026","1 - Qualification","Kaufman Rossin",29999,"Inbound - Partner","2026-05"],
-    ["Houston AI - New Business 7/2026","1 - Qualification","Stripe",29999,"Inbound - Partner","2026-05"],
-    ["Ship Sticks - New Business 7/2026","1 - Qualification","Runway",29999,"Inbound - Partner","2026-05"],
-    ["645 Ventures - Management Co - New Business 8/2026","1 - Qualification","645 Ventures - Management Co",29999,"Inbound - Partner","2026-05"],
-    ["Fellowship of Christian Athletes - New Business 6/2026","1 - Qualification","Capin Crouse",29999,"Inbound - Partner","2026-05"],
-    ["DynPro - New Business 6/2026","1 - Qualification","Connor Group",29999,"Inbound - Partner","2026-05"],
-    ["RocketRide - New Business 6/2026","1 - Qualification","Stripe",29999,"Event - Partner Hosted","2026-05"],
-    ["ABCS Insights - New Business 7/2026","1 - Qualification","Volition Capital*",29999,"Inbound - Partner","2026-05"],
-    ["HAAS Alert - New Business 7/2026","1 - Qualification","Volition Capital*",29999,"Inbound - Partner","2026-05"],
-    ["Logos - New Business 7/2026","1 - Qualification","Cove Hill Partners",29999,"Inbound - Partner","2026-05"],
-    ["Top Down Ventures - New Business 6/2026","1 - Qualification","Top Down Ventures",30000,"Inbound - Partner","2026-05"],
-    ["VenturEd Solutions - New Business 7/2026","1 - Qualification","Insight Partners",29999,"Inbound - Partner","2026-05"],
-    ["Lilypad Family Office - New Business 8/2026","1 - Qualification","Frank Rimerman",15000,"Inbound - Partner","2026-05"],
-    ["JanusRx - New Business 7/2026","Closed Won","FFL Partners",50000,"Inbound - Partner","2026-05","2026-06"],
-    ["Planisware - New Business 6/2026","1 - Qualification","Airwallex",29999,"Inbound - Partner","2026-05"],
-    ["Absci - New Business 8/2026","1 - Qualification","CrossCountry Consulting",29999,"Inbound - Partner","2026-05"],
-    ["Big Horn Ski Mountain and Resort - New Business 8/2026","1 - Qualification","Kaufman Rossin",29999,"Inbound - Partner","2026-05"],
-    ["Crescent Midstream - New Business 8/2026","1 - Qualification","CFGI",30000,"Inbound - Partner","2026-05"],
-    ["Abridge - New Business 8/2026","1 - Qualification","PwC",29999,"Inbound - Partner","2026-05"],
-    ["Plotly - New Business 6/2026","1 - Qualification","Frontier CFO Services Inc.",29999,"Inbound - Partner","2026-05"],
-    ["Meadowlark Ski & Lake Lodge - New Business 8/2026","1 - Qualification","Kaufman Rossin",29999,"Inbound - Partner","2026-05"],
-    ["Luma - New Business 8/2026","1 - Qualification","CBIZ",29999,"Inbound - Partner","2026-05"],
-    ["Parachute Health - New Business 6/2026","1 - Qualification","Insight Partners",29999,"Cold Outbound","2026-05"],
-    ["Packsmith - New Business 6/2026","1 - Qualification","Attivo Partners",29999,"Inbound - Partner","2026-05"],
-    ["GrowthZone - New Business 7/2026","1 - Qualification","Lead Edge Capital",29999,"Inbound - Partner","2026-05"],
-    ["Zenus - New Business 7/2026","1 - Qualification","Protiviti",30000,"Inbound - Partner","2026-05"],
-    ["Encore Technologies - New Business 7/2026","1 - Qualification","EY",29999,"Inbound - Partner","2026-05"],
-    ["ENAM CO. - New Business 8/2026","1 - Qualification","Kranz Consulting",30000,"Inbound - Partner","2026-05"],
-    // ── Jun 2026 pipeline (refreshed 2026-06-27) ──
-    // Closed Won
-    ["Transient AI - New Business 6/2026","Closed Won","John McCarthy",20000,"Partner - Resell","2026-06","2026-06"],
-    ["r3nquist.com - New Business 7/2026","Closed Won","Forvis Mazars US",40500,"Inbound - Partner","2026-06","2026-06"],
-    ["Monetize Now - New Business 7/2026","Closed Won","Monetize Now",36760,"Inbound - Partner","2026-06","2026-06"],
-    ["Sphere - New Business 9/2026","Closed Won","Sphere",15000,"Inbound - Partner","2026-06","2026-06"],
-    ["Finops - New Business 7/2026","Closed Won","Graphite Financial",40000,"Inbound - Partner","2026-06","2026-06"],
-    ["Inworld AI - New Business 6/2026","Closed Won","Attivo Partners",25000,"Inbound - Partner","2026-05","2026-06"],
-    ["LuminaBio Advisory - New Business 7/2026","Closed Won","Propeller Industries",24000,"Inbound - Partner","2026-06","2026-06"],
-    // 6 - Verbal Commit
-    ["Intellaquest - New Business 6/2026","6 - Verbal Commit","—",39000,"Inbound - Partner","2026-06"],
-    // 5 - Negotiation
-    ["Crosschq - New Business 7/2026","5 - Negotiation","Stripe",30000,"Inbound - Partner","2026-06"],
-    // 4 - Solution Validation
-    ["Access Holdings - New Business 7/2026","4 - Solution Validation","Raiz",29999,"Partner - Resell","2026-06"],
-    ["The Edge - New Business 7/2026","4 - Solution Validation","Serent Capital",29999,"Inbound - Partner","2026-06"],
-    // 3 - Technical Alignment
-    ["Allied Consultants - New Business 6/2026","3 - Technical Alignment","Consero Global",15000,"Partner - Resell","2026-06"],
-    // 2 - Discovery
-    ["Silverton Partners - New Business 8/2026","2 - Discovery","Silverton Partners",29999,"Inbound - Partner","2026-06"],
-    ["Photobucket - New Business 7/2026","2 - Discovery","HUBIFI",29999,"Inbound - Partner","2026-06"],
-    ["Recur Software - New Business 9/2026","2 - Discovery","Interlude Capital",29999,"Inbound - Partner","2026-06"],
-    ["All Trails - New Business 8/2026","2 - Discovery","HUBIFI",29999,"Inbound - Partner","2026-06"],
-    ["Crusoe - New Business 7/2026","2 - Discovery","Raiz",29999,"Partner - Resell","2026-06"],
-    ["Golden Analytics - New Business 8/2026","2 - Discovery","Modern Finance",29999,"Inbound - Partner","2026-06"],
-    ["Woodland South Capital - New Business 8/2026","2 - Discovery","Woodland South Capital",29999,"Inbound - Partner","2026-06"],
-    ["TicketManager - New Business 7/2026","2 - Discovery","Valeas Capital Partners",29999,"Inbound - Partner","2026-06"],
-    ["Inventory Ally - New Business 8/2026","2 - Discovery","York IE",29999,"Inbound - Partner","2026-06"],
-    ["Vetcove - New Business 8/2026","2 - Discovery","Thrive Capital",29999,"Inbound - Partner","2026-06"],
-    ["Ambient App - New Business 8/2026","2 - Discovery","Atrios",29999,"Inbound - Partner","2026-06"],
-    ["Kojo - New Business 7/2026","2 - Discovery","Battery Ventures",32000,"Inbound - Partner","2026-06"],
-    // 1 - Qualification
-    ["Level Health - New Business 8/2026","1 - Qualification","Atrios",29999,"Inbound - Partner","2026-06"],
-    ["Nichols cauley - New Business 7/2026","1 - Qualification","Nichols Cauley",29999,"Inbound - Partner","2026-06"],
-    ["Quartermaster - New Business 7/2026","1 - Qualification","Aprio",30000,"Inbound - Partner","2026-06"],
-    ["The Social+Capital Partnership - New Business 7/2026","1 - Qualification","Countsy",30000,"Inbound - Partner","2026-06"],
-    ["Harmonic - New Business 8/2026","1 - Qualification","Harmonic",29999,"Inbound - Partner","2026-06"],
-    ["Pair Team - New Business 7/2026","1 - Qualification","Connor Group",29999,"Inbound - Partner","2026-06"],
-    ["Clean Core Solutions - New Business 7/2026","1 - Qualification","Doss",29999,"Inbound - Partner","2026-06"],
-    ["Nudge Security - New Business 8/2026","1 - Qualification","Fiscal Founders",29999,"Inbound - Partner","2026-06"],
-    ["The Signal Group - New Business 8/2026","1 - Qualification","PwC",29999,"Inbound - Partner","2026-06"],
-    ["NuLegal - New Business 8/2026","1 - Qualification","Atrios",29999,"Inbound - Partner","2026-06"],
-    ["22V Research Group - New Business 8/2026","1 - Qualification","Aprio",29999,"Inbound - Partner","2026-06"],
-    ["DeepL - New Business 8/2026","1 - Qualification","ZeroDayClose",29999,"Inbound - Partner","2026-06"],
-    ["VisaHub - New Business 9/2026","1 - Qualification","Atrios",29999,"Inbound - Partner","2026-06"],
-    ["A12 Incubator - New Business 7/2026","1 - Qualification","—",29999,"Inbound - Partner","2026-06"],
-    ["Bipsync - New Business 7/2026","1 - Qualification","Consero Global",29999,"Partner - Resell","2026-06"],
-    ["UserTesting - New Business 8/2026","1 - Qualification","CBIZ",29999,"Inbound - Partner","2026-06"],
-    ["Qventus Inc - New Business 8/2026","1 - Qualification","Bessemer Venture Partners",29999,"Inbound - Partner","2026-06"],
-    ["OWOX - New Business 8/2026","1 - Qualification","Runway",29999,"Inbound - Partner","2026-06"],
-    ["Imviva Biotech - New Business 8/2026","1 - Qualification","Williams Marston",29999,"Inbound - Partner","2026-06"],
-    ["Acoustic - New Business 9/2026","1 - Qualification","Francisco Partners",29999,"Inbound - Partner","2026-06"],
-    ["Firsthand - New Business 9/2026","1 - Qualification","Triple Aim Partners",29999,"Inbound - Partner","2026-06"],
-    ["Luminary Hospice - New Business 9/2026","1 - Qualification","Triple Aim Partners",29999,"Inbound - Partner","2026-06"],
-    ["Onebrief - New Business 8/2026","1 - Qualification","Battery Ventures",29999,"Inbound - Partner","2026-06"],
-    ["York IE - New Business 8/2026","1 - Qualification","York IE",29999,"Inbound - Partner","2026-06"],
-    ["Osome - New Business 9/2026","1 - Qualification","Stripe",29999,"Inbound - Partner","2026-06"],
-    ["Mirror Lawn - New Business 7/2026","1 - Qualification","Zanovoy",15000,"Partner - Resell","2026-06"],
-    ["Singu - New Business 8/2026","1 - Qualification","K1 Investment Management",29999,"Inbound - Partner","2026-06"],
-    ["thinkroya - New Business 9/2026","1 - Qualification","Citrin Cooperman",29999,"Inbound - Partner","2026-06"],
-    ["Hummingbird - New Business 8/2026","1 - Qualification","Battery Ventures",29999,"Inbound - Partner","2026-06"],
-    ["Arthur Ventures - New Business 8/2026","1 - Qualification","Arthur Ventures",29999,"Inbound - Partner","2026-06"],
-    ["Flutterwave - New Business 9/2026","1 - Qualification","Forvis Mazars US",29999,"Inbound - Partner","2026-06"],
-    ["Violet Labs - New Business 7/2026","1 - Qualification","Violet Labs",29999,"Inbound - Partner","2026-06"],
-    ["Atmosphere TV - New Business 8/2026","1 - Qualification","HUBIFI",29999,"Inbound - Partner","2026-06"],
-    ["SchoolStatus - New Business 8/2026","1 - Qualification","PSG Equity",29999,"Inbound - Partner","2026-06"],
-    ["Kobold Metals - New Business 8/2026","1 - Qualification","Gigex",29999,"Inbound - Partner","2026-06"],
-    // ── Closed Lost ──
-    ["Mint Credits - New Business 3/2026","Closed Lost","Armanino",29999,"Inbound - Partner","2026-01"],
-    ["Haven Energy - New Business 4/2026","Closed Lost","Agile Advisors",29999,"Inbound - Partner","2026-01"],
-    ["Heartbeat Health - New Business 4/2026","Closed Lost","Payflow",29999,"Inbound - Partner","2026-01"],
-    ["Systemic Ventures - New Business 4/2026","Closed Lost","Systemic Ventures",29999,"Inbound - Partner","2026-02"],
-    ["Signal House - New Business 2/2026","Closed Lost","Ramp",29999,"Inbound - Partner","2026-02"],
-    ["Brentwood Associates - New Business 3/2026","Closed Lost","Brentwood Associates",29999,"Inbound - Partner","2026-02"],
-    ["Intelligent Locations - New Business 4/2026","Closed Lost","Marlin Equity Partners",29999,"Inbound - Partner","2026-02"],
-    ["DoseSpot - New Business 5/2026","Closed Lost","PSG Equity",29999,"Outbound - Partner","2026-02"],
-    ["MotivHealth - New Business 5/2026","Closed Lost","Datarails",29999,"Inbound - Partner","2026-02"],
-    ["Ala - New Business 3/2026","Closed Lost","Cube Software",29999,"Inbound - Partner","2026-02"],
-    ["Kovo Healthtech - New Business 2/2026","Closed Lost","Integrus Firm",29999,"Inbound - Partner","2026-02"],
-    ["Capchase - New Business 3/2026","Closed Lost","Attivo Partners",29999,"Inbound - Partner","2026-02"],
-    ["Synamedia - New Business 2/2026","Closed Lost","Permira",29999,"Inbound - Partner","2026-02"],
-    ["Payscale - New Business 4/2026","Closed Lost","Insight Partners",29999,"Outbound - Partner","2026-02"],
-    ["Anderson Family Care - New Business 3/2026","Closed Lost","Wiss",29999,"Inbound - Partner","2026-02"],
-    ["Goods Disposal Service - New Business 3/2026","Closed Lost","CBIZ",29999,"Inbound - Partner","2026-02"],
-    ["Proscia - New Business 3/2026","Closed Lost","Provenscale",29999,"Inbound - Partner","2026-02"],
-    ["Lively - New Business 5/2026","Closed Lost","Armanino",29999,"Inbound - Partner","2026-03"],
-    ["Virgo CX - New Business 3/2026","Closed Lost","Bitwave",29999,"Inbound - Partner","2026-03"],
-    ["Flashlight Learning - New Business 4/2026","Closed Lost","Rippling",29999,"Inbound - Partner","2026-03"],
-    ["BlueMatrix - New Business 5/2026","Closed Lost","Thoma Bravo",29999,"Outbound - Partner","2026-03"],
-    ["PCMI - New Business 4/2026","Closed Lost","Thoma Bravo",29999,"Inbound - Partner","2026-03"],
-    ["Procurement Partners - New Business 4/2026","Closed Lost","Serent Capital",29999,"Cold Outbound","2026-03"],
-    ["137 Ventures - New Business 4/2026","Closed Lost","137 Ventures",29999,"Inbound - Paid Search","2026-03"],
-    ["Level AI - New Business 4/2026","Closed Lost","Joanna Coleman Consulting",25000,"Inbound - Direct Traffic","2026-03"],
-    ["CCT - New Business 4/2026","Closed Lost","Serent Capital",29999,"Outbound - Partner","2026-03"],
-    ["Pinebrook Group - New Business 5/2026","Closed Lost","RSM US LLP",33150,"Inbound - Partner","2026-03"],
-    ["Procede Software - New Business 5/2026","Closed Lost","Tabs",29999,"Inbound - Partner","2026-03"],
-    ["TurboTenant - New Business 4/2026","Closed Lost","LLR Partners",29999,"Inbound - Partner","2026-03"],
-    ["Solarity - New Business 5/2026","Closed Lost","TA Associates",29999,"Inbound - Partner","2026-04"],
-    ["Happl - New Business 5/2026","Closed Lost","Tabs",29999,"Inbound - Partner","2026-04"],
-    ["American AI Logistics - New Business 5/2026","Closed Lost","Echo Park Consulting",29999,"Inbound - Partner","2026-04"],
-    ["Causa Prima - New Business 5/2026","Closed Lost","CLA",29999,"Inbound - Organic Search","2026-04"],
-    ["Circadian Risk Inc. - New Business 4/2026","Closed Lost","Arthur Ventures",29999,"Cold Outbound","2026-04"],
-    ["Affordable American Insurance - New Business 5/2026","Closed Lost","Gauge Capital",30000,"Inbound - Partner","2026-04"],
-    ["SurfaceAI - New Business 5/2026","Closed Lost","Headwaters Growth",30000,"Inbound - Partner","2026-05"],
-    ["Recycle Track Systems - New Business 5/2026","Closed Lost","Volition Capital*",29999,"Inbound - Partner","2026-05"],
-    ["Alpha Machines - New Business 6/2026","Closed Lost","Doss",29999,"Inbound - Partner","2026-06"],
-    ["Lynd Clinical - New Business 6/2026","Closed Lost","Consero Global",29999,"Partner - Resell","2026-06"],
-    ["SmartPoint - New Business 6/2026","Closed Lost","Brex",29999,"Inbound - Partner","2026-06"],
-    // ── Closed Won ──
-    ["PZJR Engineering - New Business 1/2026","Closed Won","Mercury",6000,"Inbound - Partner","2026-03","2026-01"],
-    ["Nob Initiative - New Business 12/2025","Closed Won","TillCFO",24000,"Partner - Resell","2026-03","2026-01"],
-    ["Mindgard - New Business 1/2026","Closed Won","TillCFO",1200,"Partner - Resell","2026-03","2026-01"],
-    ["Wise Rock - New Business 1/2026","Closed Won","TillCFO",18000,"Partner - Resell","2026-03","2026-01"],
-    ["Aloe Identity - New Business 1/2026","Closed Won","Burkland",1200,"Inbound - Partner","2026-03","2026-01"],
-    ["Nunchaka.tech New Business 1/2026","Closed Won","Graphite Financial",600,"Partner - Resell","2026-03","2026-01"],
-    ["Tunnl - New Business 2/2026","Closed Won","Tarsus",31000,"Inbound - Partner","2025-11","2026-01"],
-    ["Hebbia - New Business 2/2026","Closed Won","Attivo Partners",20000,"Inbound - Partner","2026-01","2026-01"],
-    ["Vapi - New Business 2/2026","Closed Won","Ramp",28900,"Inbound - Partner","2026-01","2026-01"],
-    ["Juicebox - New Business 2/2026","Closed Won","Attivo Partners",19000,"Cold Outbound","2025-12","2026-02"],
-    ["Busright - New Business 4/2026","Closed Won","John McCarthy",28900,"Inbound - Partner","2025-12","2026-02"],
-    ["Datatruck, Inc. - New Business 3/2026","Closed Won","Attivo Partners",34850,"Inbound - Direct Traffic","2026-01","2026-02"],
-    ["Edulog.com - New Business 3/2026","Closed Won","Serent Capital",22050,"Inbound - Partner","2026-01","2026-02"],
-    ["Zelo.ai - New Business 2/2026","Closed Won","Wiss",0,"Inbound - Partner","2026-02","2026-02"],
-    ["Isara.io - New Business 2/2026","Closed Won","KongBasileConsulting",18000,"Partner - Resell","2026-02","2026-02"],
-    ["Stepful - New Business 3/2026","Closed Won","Connor Group",32800,"Inbound","2025-12","2026-02"],
-    ["Cohen Circle - New Business 3/2026","Closed Won","Cohen Circle",37000,"Inbound - Partner","2026-02","2026-02"],
-    ["Ologie - New Business 1/2026","Closed Won","Graphite Financial",600,"Partner - Resell","2026-04","2026-03"],
-    ["7Mindsets - New Business 3/2026","Closed Won","Consero Global",15000,"Partner - Resell","2026-03","2026-03"],
-    ["CrewAI - New Business 4/2026","Closed Won","Insight Partners",27000,"Inbound - Partner","2026-02","2026-03"],
-    ["INNERGY - New Business 4/2026","Closed Won","Mainsail Partners",41000,"Cold Outbound","2026-03","2026-03"],
-    ["Stacksync - New Business 4/2026","Closed Won","Stacksync",43000,"Inbound","2026-03","2026-03"],
-    ["Airbyte - New Business 4/2026","Closed Won","Orb",33000,"Cold Outbound","2026-02","2026-03"],
-    ["Temper Inc. - New Business 3/2026","Closed Won","Rooled",1200,"Inbound - Partner","2026-03","2026-03"],
-    ["Crest Rock Partners - New Business 6/2026","Closed Won","Crest Rock Partners",12000,"Inbound - Partner","2026-02","2026-03"],
-    ["Lendscape - New Business 6/2026","Closed Won","Bowmark Capital",29000,"Inbound","2025-11","2026-03"],
-    ["Totango - New Business 4/2026","Closed Won","Armanino",33150,"Inbound - Paid Search","2026-02","2026-03"],
-    ["Builder - New Business 4/2026","Closed Won","Zanovoy",24000,"Referral - Employee","2026-02","2026-04"],
-    ["ExaCare AI - New Business 5/2026","Closed Won","Insight Partners",24000,"Inbound - Paid Search","2026-02","2026-04"],
-    ["GreenLite Technologies - New Business 5/2026","Closed Won","Insight Partners",24000,"Inbound","2025-11","2026-04"],
-    ["Zerion - New Business 5/2026","Closed Won","Tres Finance",22500,"Inbound - Organic Search","2026-03","2026-04"],
-    ["QC Capital - New Business 5/2026","Closed Won","Brex",40500,"Inbound - Partner","2026-03","2026-04"],
-    ["Unbounce - New Business 5/2026","Closed Won","Crest Rock Partners",30000,"Inbound - Partner","2026-02","2026-04"],
-    ["Aqua - New Business 6/2026","Closed Won","Arthur Ventures",24000,"Inbound - Partner","2026-02","2026-04"],
-    ["ViaBot - New Business 6/2026","Closed Won","Headwaters Growth",30750,"Inbound - Partner","2026-03","2026-04"],
-    ["Gandler Sports Group - New Business 5/2026","Closed Won","KongBasileConsulting",21000,"Inbound - Partner","2026-04","2026-04"],
-    ["People Data Labs - New Business 5/2026","Closed Won","Ramp",25000,"Event - Dinner","2025-11","2026-04"],
-    ["Capi Money - New Business 7/2026","Closed Won","Creandum",30000,"Inbound - Organic Search","2026-02","2026-04"],
-    ["Dapple - New Business 5/2026","Closed Won","Armanino",40000,"Inbound - Partner","2026-04","2026-05"],
-    ["Qualified Digital - New Business 6/2026","Closed Won","Stella Point Capital",40000,"Inbound - Partner","2026-04","2026-05"],
-    ["Q Bio - New Business 6/2026","Closed Won","Brianna Hammer",49950,"Inbound - Partner","2026-05","2026-05"],
-    ["TRUE - New Business 5/2026","Closed Won","Consero Global",9000,"Partner - Resell","2025-12","2026-05"],
-    ["Rogo - New Business 6/2026","Closed Won","Sequoia Capital",44000,"Referral","2026-04","2026-05"],
-    ["Catalio Capital Management - New Business 6/2026","Closed Won","CFGI",15000,"Partner - Resell","2026-05","2026-05"],
-    ["Ornn - New Business 6/2026","Closed Won","Andreessen Horowitz",40000,"Inbound - Partner","2026-05","2026-05"],
-    ["IOActive - New Business 6/2026","Closed Won","Raiz",47500,"Event - Webinar","2026-03","2026-05"],
-    ["Quantifind - New Business 6/2026","Closed Won","Summit Partners",28800,"Inbound","2025-10","2026-05"],
-    ["Rentrak - New Business 6/2026","Closed Won","Accordion",50000,"Inbound - Partner","2026-05","2026-05"],
-    ["PayIt - New Business 7/2026","Closed Won","Insight Partners",51000,"Cold Outbound","2026-02","2026-05"],
-    ["Smilesource - New Business 5/2026","Closed Won","Incline Equity Partners",35700,"Inbound - Partner","2026-03","2026-05"]
-];
-
-
+function initPipelineAccordion() {
   const SF_BASE = 'https://rillet.lightning.force.com/lightning/r/Opportunity/';
-  const SF_IDS = {
-    "PZJR Engineering - New Business 1/2026":"006Uu00000SgCUUIA3",
-    "Nob Initiative - New Business 12/2025":"006Uu00000SgCe9IAF",
-    "Mindgard - New Business 1/2026":"006Uu00000SgC7tIAF",
-    "Wise Rock - New Business 1/2026":"006Uu00000SgBwbIAF",
-    "Aloe Identity - New Business 1/2026":"006Uu00000SfSGOIA3",
-    "Nunchaka.tech New Business 1/2026":"006Uu00000SgHNjIAN",
-    "Tunnl - New Business 2/2026":"006Uu00000OjL2iIAF",
-    "Hebbia - New Business 2/2026":"006Uu00000Qf0MtIAJ",
-    "Vapi - New Business 2/2026":"006Uu00000QeMUHIA3",
-    "Juicebox - New Business 2/2026":"006Uu00000PLUhRIAX",
-    "Busright - New Business 4/2026":"006Uu00000PJQWfIAP",
-    "Datatruck, Inc. - New Business 3/2026":"006Uu00000QvwedIAB",
-    "Edulog.com - New Business 3/2026":"006Uu00000RRDxhIAH",
-    "Zelo.ai - New Business 2/2026":"006Uu00000S9DM7IAN",
-    "Isara.io - New Business 2/2026":"006Uu00000S9kTNIAZ",
-    "Stepful - New Business 3/2026":"006Uu00000PKGDVIA5",
-    "Cohen Circle - New Business 3/2026":"006Uu00000S0ljaIAB",
-    "Ologie - New Business 1/2026":"006Uu00000TTZkrIAH",
-    "7Mindsets - New Business 3/2026":"006Uu00000SxlPNIAZ",
-    "CrewAI - New Business 4/2026":"006Uu00000S7d69IAB",
-    "INNERGY - New Business 4/2026":"006Uu00000St1mXIAR",
-    "Stacksync - New Business 4/2026":"006Uu00000T391FIAR",
-    "Airbyte - New Business 4/2026":"006Uu00000RkGJyIAN",
-    "Temper Inc. - New Business 3/2026":"006Uu00000TKltLIAT",
-    "Crest Rock Partners - New Business 6/2026":"006Uu00000RmRcgIAF",
-    "Lendscape - New Business 6/2026":"006Uu00000P1dycIAB",
-    "Totango - New Business 4/2026":"006Uu00000Rfd2gIAB",
-    "Builder - New Business 4/2026":"006Uu00000SDkXyIAL",
-    "ExaCare AI - New Business 5/2026":"006Uu00000Rjii8IAB",
-    "GreenLite Technologies - New Business 5/2026":"006Uu00000O9WpGIAV",
-    "Zerion - New Business 5/2026":"006Uu00000T69JGIAZ",
-    "QC Capital - New Business 5/2026":"006Uu00000TIuRIIA1",
-    "Unbounce - New Business 5/2026":"006Uu00000SUG8tIAH",
-    "Aqua - New Business 6/2026":"006Uu00000RmQANIA3",
-    "ViaBot - New Business 6/2026":"006Uu00000TFferIAD",
-    "Gandler Sports Group - New Business 5/2026":"006Uu00000TqcRuIAJ",
-    "People Data Labs - New Business 5/2026":"006Uu00000OjL2pIAF",
-    "Capi Money - New Business 7/2026":"006Uu00000SYwnpIAD",
-    "Dapple - New Business 5/2026":"006Uu00000U5l6fIAB",
-    "Qualified Digital - New Business 6/2026":"006Uu00000TgDcsIAF",
-    "Q Bio - New Business 6/2026":"006Uu00000UTZcFIAX",
-    "TRUE - New Business 5/2026":"006Uu00000PmOpdIAF",
-    "Rogo - New Business 6/2026":"006Uu00000UCb2XIAT",
-    "Catalio Capital Management - New Business 6/2026":"006Uu00000UgxQeIAJ",
-    "Ornn - New Business 6/2026":"006Uu00000UlFaEIAV",
-    "IOActive - New Business 6/2026":"006Uu00000T8OinIAF",
-    "Quantifind - New Business 6/2026":"006Uu00000NTYIoIAP",
-    "Rentrak - New Business 6/2026":"006Uu00000UYsxbIAD",
-    "PayIt - New Business 7/2026":"006Uu00000S0ySCIAZ",
-    "Smilesource - New Business 5/2026":"006Uu00000TP9tpIAD",
-    "Brightwheel - New Business 6/2026":"006Uu00000RmOAAIA3",
-    "sherpahq.ai - New Business 6/2026":"006Uu00000TOON3IAP",
-    "Community Health Plan Collaborative dba OneHealth - New Business 5/2026":"006Uu00000UCmijIAD",
-    "CIVIE - New Business 6/2026":"006Uu00000Rr7S3IAJ",
-    "CertifID - New Business 6/2026":"006Uu00000SepJrIAJ",
-    "Manna Tree Partners - New Business 7/2026":"006Uu00000SqbRZIAZ",
-    "Level Health - New Business 8/2026":"006Uu00000V9LjNIAV",
-    "Sphere - New Business 7/2026":"006Uu00000V9m6oIAB",
-    "Crusoe - New Business 7/2026":"006Uu00000VCf5ZIAT",
-    "Quartermaster - New Business 8/2026":"006Uu00000VEK54IAH",
-    "The Social+Capital Partnership - New Business 7/2026":"006Uu00000VETJdIAP",
-    "Lynd Clinical - New Business 7/2026":"006Uu00000VEutPIAT",
-    "Crosschq":"006Uu00000VGQMTIA5",
-    "Pair Team - New Business 7/2026":"006Uu00000VH2oMIAT",
-    "Finops - New Business 8/2026":"006Uu00000VH6ITIA1",
-    "LuminaBio Advisory - New Business 6/2026":"006Uu00000VH7WIIA1",
-    "Intellaquest - New Business 6/2026":"006Uu00000VHstNIAT",
-    "Clean Core Solutions - New Business 8/2026":"006Uu00000VI5YrIAL",
-    "Golden Analytics - New Business 8/2026":"006Uu00000VIey3IAD",
-    "Nudge Security - New Business 8/2026":"006Uu00000VJTFmIAP",
-    "The Signal Group - New Business 8/2026":"006Uu00000VJVZKIA5",
-    "All Trails - New Business 8/2026":"006Uu00000V8JgLIAV",
-    "Harmonic - New Business 8/2026":"006Uu00000VEfO1IAL",
-    "Alpha Machines - New Business 8/2026":"006Uu00000VJzvZIAT",
-    "NuLegal - New Business 8/2026":"006Uu00000VJxydIAD",
-    "Woodland South Capital - New Business 8/2026":"006Uu00000VK0GYIA1",
-    "Excedr - New Business 6/2026":"006Uu00000U5SDiIAN",
-    "Transient AI - New Business 6/2026":"006Uu00000V38iMIAR",
-    "Access Holdings - New Business 7/2026":"006Uu00000V6UG9IAN",
-    "Monetize Now - New Business 7/2026":"006Uu00000V6HsRIAV",
-    "Photobucket - New Business 7/2026":"006Uu00000V4rFBIAZ",
-    "Silverton Partners - New Business 8/2026":"006Uu00000V4ReBIAV",
-    "r3nquist.com - New Business 8/2026":"006Uu00000V45nFIAR",
-    "Escalera Capital - New Business 6/2026":"006Uu00000UPTDdIAP",
-    "PetScreening - New Business 7/2026":"006Uu00000QoLVLIA3",
-    "Dost - New Business 6/2026":"006Uu00000RkJwCIAV",
-    "North Pole Security - New Business 3/2026":"006Uu00000S5iA2IAJ",
-    "The Only Agency - New Business 6/2026":"006Uu00000SD9beIAD",
-    "Moment - New Business 6/2026":"006Uu00000SSJ4RIAX",
-    "AirWorks - New Business 6/2026":"006Uu00000StmgeIAB",
-    "Mainsail Partners - New Business 6/2026":"006Uu00000T71EpIAJ",
-    "Modular - New Business 6/2026":"006Uu00000TQwFqIAL",
-    "Kenect - New Business 6/2026":"006Uu00000TREuEIAX",
-    "Xenia - New Business 8/2026":"006Uu00000TaC8PIAV",
-    "Procede Software - New Business 6/2026":"006Uu00000UArD4IAL",
-    "Stay AI - New Business 6/2026":"006Uu00000S0VyAIAV",
-    "Spark Advisors - New Business 7/2026":"006Uu00000S6757IAB",
-    "Black Kite - New Business 9/2026":"006Uu00000Sv0ROIAZ",
-    "Rx Redefined - New Business 4/2026":"006Uu00000T1fy5IAB",
-    "Cortechs.ai - New Business 4/2026":"006Uu00000T1gEDIAZ",
-    "Wisq - New Business 6/2026":"006Uu00000T4XccIAF",
-    "Updater - New Business 4/2026":"006Uu00000TEtbrIAD",
-    "Matter Labs - New Business 6/2026":"006Uu00000Td8rRIAR",
-    "Traumasoft - New Business 6/2026":"006Uu00000Te33JIAR",
-    "Fiddler AI - New Business 6/2026":"006Uu00000TeecLIAR",
-    "Judi Health - New Business 6/2026":"006Uu00000TmVqQIAV",
-    "Roo Veterinary - New Business 6/2026":"006Uu00000Tx0GGIAZ",
-    "Queen One - New Business 7/2026":"006Uu00000U3B0rIAF",
-    "Sonia Health - New Business 7/2026":"006Uu00000U5Q2DIAV",
-    "BillerGenie - New Business 7/2026":"006Uu00000UY64vIAD",
-    "AgentAstraAI - New Business 5/2026":"006Uu00000UaAxHIAV",
-    "Otelier - New Business 7/2026":"006Uu00000Udp1NIAR",
-    "DATABASICS - New Business 6/2026":"006Uu00000UvwlyIAB",
-    "Redpanda Data - New Business 7/2026":"006Uu00000RQwVSIA1",
-    "PPI - New Business 6/2026":"006Uu00000S0ctBIAR",
-    "Wisedocs Inc. - New Business 6/2026":"006Uu00000SDflIIAT",
-    "Dealerware - New Business 6/2026":"006Uu00000SJ64pIAD",
-    "Latent - New Business 8/2026":"006Uu00000SQLjqIAH",
-    "Archy - New Business 6/2026":"006Uu00000SgBJtIAN",
-    "Virtuous - New Business 7/2026":"006Uu00000Sv5VvIAJ",
-    "Merlin - New Business 6/2026":"006Uu00000TEU0kIAH",
-    "Chassi - New Business 6/2026":"006Uu00000TQt1lIAD",
-    "GeoWealth - New Business 6/2026":"006Uu00000TUrnlIAD",
-    "Supersonik.ai - New Business 6/2026":"006Uu00000Tc3qeIAB",
-    "Togetherwork - New Business 7/2026":"006Uu00000Tfs29IAB",
-    "crowdstreet-inc - New Business 6/2026":"006Uu00000TgAOwIAN",
-    "Solvd, Inc. - New Business 7/2026":"006Uu00000TmDYZIA3",
-    "TJM Labs - New Business 6/2026":"006Uu00000TmsjqIAB",
-    "Osage Partners (Mgmt Co) - New Business 6/2026":"006Uu00000TtbmIIAR",
-    "Solidion technologies - New Business 6/2026":"006Uu00000Tu5NjIAJ",
-    "PharmaforceIQ - New Business 6/2026":"006Uu00000U2mnFIAR",
-    "OneChronos - New Business 6/2026":"006Uu00000UDqQvIAL",
-    "Buburuza - New Business 8/2026":"006Uu00000UDt5SIAT",
-    "LifeLoop - New Business 6/2026":"006Uu00000UFWXmIAP",
-    "Sovra - New Business 6/2026":"006Uu00000UKnsxIAD",
-    "Mantel - New Business 6/2026":"006Uu00000UQxb3IAD",
-    "EverlyWell - New Business 8/2026":"006Uu00000UQyX7IAL",
-    "Vivodyne - New Business 12/2026":"006Uu00000UTNzGIAX",
-    "Quizlet - New Business 8/2026":"006Uu00000UXMTWIA5",
-    "Cerbo - Opti - New Business 8/2026":"006Uu00000UZ4p3IAD",
-    "Jda Tsg - New Business 6/2026":"006Uu00000UZHG1IAP",
-    "Zenarate - New Business 7/2026":"006Uu00000UcbLRIAZ",
-    "Moxe Health - New Business 7/2026":"006Uu00000UcVWFIA3",
-    "Sharebite - New Business 7/2026":"006Uu00000UdfjaIAB",
-    "Levanta - New Business 7/2026":"006Uu00000Ue7cbIAB",
-    "Counsel Health - New Business 7/2026":"006Uu00000UmtNVIAZ",
-    "Dazos - New Business 4/2026":"006Uu00000S0dHNIAZ",
-    "The Services Companies - New Business 2/2026":"006Uu00000S5ma9IAB",
-    "PriceEasy AI - New Business 4/2026":"006Uu00000SAdOEIA1",
-    "Matx.com - New Business 4/2026":"006Uu00000SH9zdIAD",
-    "CloudNine - New Business 6/2026":"006Uu00000SL951IAD",
-    "Definely - New Business 4/2026":"006Uu00000SLRZlIAP",
-    "Imagen - New Business 4/2026":"006Uu00000Sa7vhIAB",
-    "The Surplus Line Association of California (SLA) - New Business 6/2026":"006Uu00000Sa2paIAB",
-    "Pylon - New Business 2/2026":"006Uu00000SaFV3IAN",
-    "Ajax Health - New Business 6/2026":"006Uu00000Sm3tAIAR",
-    "Sigma7 - New Business 5/2026":"006Uu00000SpQd3IAF",
-    "Pine Crest School - New Business 6/2026":"006Uu00000Swwl3IAB",
-    "PairSoft - New Business 6/2026":"006Uu00000T898hIAB",
-    "Qlik - New Business 6/2026":"006Uu00000T8GZxIAN",
-    "Portside - New Business 6/2026":"006Uu00000TF1xaIAD",
-    "Hyphen - New Business 6/2026":"006Uu00000TJ23pIAD",
-    "Glow Services - New Business 5/2026":"006Uu00000TJYV8IAP",
-    "Clutch - New Business 5/2026":"006Uu00000TONSdIAP",
-    "Try Your Best - New Business 5/2026":"006Uu00000TOoUPIA1",
-    "Lumen Risk - New Business 4/2026":"006Uu00000TP9vRIAT",
-    "Alacura - New Business 4/2026":"006Uu00000TP4VzIAL",
-    "Marlin Equity Partners - New Business 6/2026":"006Uu00000TUyu5IAD",
-    "Cove - New Business 6/2026":"006Uu00000TV01SIAT",
-    "Awardco - New Business 7/2026":"006Uu00000TX1npIAD",
-    "Embo - New Business 6/2026":"006Uu00000TY677IAD",
-    "Forward Edge - New Business 6/2026":"006Uu00000Tg9UTIAZ",
-    "xCures - New Business 6/2026":"006Uu00000ThFWBIA3",
-    "Lawtrades - New Business 8/2026":"006Uu00000ThbejIAB",
-    "Pulsar International Pty Limited - New Business 6/2026":"006Uu00000Tm34ZIAR",
-    "True Lacrosse - New Business 5/2026":"006Uu00000TmDFCIA3",
-    "Cedar AI - New Business 6/2026":"006Uu00000TnfirIAB",
-    "BetterCloud - New Business 7/2026":"006Uu00000TnoXfIAJ",
-    "Terrago Technologies - New Business 6/2026":"006Uu00000TrUKGIA3",
-    "Buildcheck AI - New Business 6/2026":"006Uu00000Ts4vbIAB",
-    "Baysora - New Business 8/2026":"006Uu00000TsNF3IAN",
-    "CPGIO - New Business 5/2026":"006Uu00000TtYupIAF",
-    "Intelycare - New Business 6/2026":"006Uu00000TwkWQIAZ",
-    "stilta - New Business 7/2026":"006Uu00000TxQ10IAF",
-    "Cortex - New Business 7/2026":"006Uu00000TxVaAIAV",
-    "Marcom - New Business 7/2026":"006Uu00000U1m1PIAR",
-    "Bedrock AI - New Business 7/2026":"006Uu00000U5NxBIAV",
-    "Hosted - New Business 6/2026":"006Uu00000U8eIMIAZ",
-    "Ninjio - New Business 12/2026":"006Uu00000U91ObIAJ",
-    "Reggora - New Business 7/2026":"006Uu00000U9ENUIA3",
-    "Rootsy - New Business 6/2026":"006Uu00000UDti9IAD",
-    "RobCo - New Business 7/2026":"006Uu00000UMgx0IAD",
-    "Suno - New Business 7/2026":"006Uu00000UMxzRIAT",
-    "T-ROC Global - New Business 8/2026":"006Uu00000UOtTVIA1",
-    "Houston AI - New Business 7/2026":"006Uu00000UPWeYIAX",
-    "Ship Sticks - New Business 7/2026":"006Uu00000UQuIEIA1",
-    "645 Ventures - Management Co - New Business 8/2026":"006Uu00000URF3JIAX",
-    "Fellowship of Christian Athletes - New Business 6/2026":"006Uu00000UTW4rIAH",
-    "DynPro - New Business 6/2026":"006Uu00000Ub1ohIAB",
-    "RocketRide - New Business 6/2026":"006Uu00000UcDHVIA3",
-    "ABCS Insights - New Business 7/2026":"006Uu00000UcVfpIAF",
-    "HAAS Alert - New Business 7/2026":"006Uu00000UcgplIAB",
-    "Logos - New Business 7/2026":"006Uu00000Ue2MpIAJ",
-    "Top Down Ventures - New Business 6/2026":"006Uu00000UhF2YIAV",
-    "VenturEd Solutions - New Business 7/2026":"006Uu00000Uj6kkIAB",
-    "Lilypad Family Office - New Business 8/2026":"006Uu00000Uk8HRIAZ",
-    "JanusRx - New Business 7/2026":"006Uu00000Um2JDIAZ",
-    "Planisware - New Business 6/2026":"006Uu00000UmjzGIAR",
-    "Absci - New Business 8/2026":"006Uu00000Un62zIAB",
-    "Big Horn Ski Mountain and Resort - New Business 8/2026":"006Uu00000Un67qIAB",
-    "Crescent Midstream - New Business 8/2026":"006Uu00000UnLhyIAF",
-    "Abridge - New Business 8/2026":"006Uu00000UpWFtIAN",
-    "Plotly - New Business 6/2026":"006Uu00000UtHtQIAV",
-    "Meadowlark Ski & Lake Lodge - New Business 8/2026":"006Uu00000Uu0IbIAJ",
-    "Luma - New Business 8/2026":"006Uu00000UuALBIA3",
-    "Parachute Health - New Business 6/2026":"006Uu00000Uv31VIAR",
-    "Packsmith - New Business 6/2026":"006Uu00000UvEbFIAV",
-    "GrowthZone - New Business 7/2026":"006Uu00000UvsSFIAZ",
-    "Zenus - New Business 7/2026":"006Uu00000Uwzl0IAB",
-    "Encore Technologies - New Business 7/2026":"006Uu00000Uxf2fIAB",
-    "ENAM CO. - New Business 8/2026":"006Uu00000UxlhZIAR",
-    "Mint Credits - New Business 3/2026":"006Uu00000Qw2wvIAB",
-    "Haven Energy - New Business 4/2026":"006Uu00000RNHBtIAP",
-    "Heartbeat Health - New Business 4/2026":"006Uu00000RSzvSIAT",
-    "Systemic Ventures - New Business 4/2026":"006Uu00000Rc4mEIAR",
-    "Signal House - New Business 2/2026":"006Uu00000Rfr2PIAR",
-    "Brentwood Associates - New Business 3/2026":"006Uu00000S0ddxIAB",
-    "Intelligent Locations - New Business 4/2026":"006Uu00000S0cbTIAR",
-    "DoseSpot - New Business 5/2026":"006Uu00000S10FdIAJ",
-    "MotivHealth - New Business 5/2026":"006Uu00000S1JDNIA3",
-    "Ala - New Business 3/2026":"006Uu00000S5j62IAB",
-    "Kovo Healthtech - New Business 2/2026":"006Uu00000S5TvmIAF",
-    "Capchase - New Business 3/2026":"006Uu00000S5kmrIAB",
-    "Synamedia - New Business 2/2026":"006Uu00000S5gt0IAB",
-    "Payscale - New Business 4/2026":"006Uu00000S5nEWIAZ",
-    "Anderson Family Care - New Business 3/2026":"006Uu00000S65zNIAR",
-    "Goods Disposal Service - New Business 3/2026":"006Uu00000S7R0AIAV",
-    "Proscia - New Business 3/2026":"006Uu00000S7aoEIAR",
-    "Lively - New Business 5/2026":"006Uu00000Sg7ZdIAJ",
-    "Virgo CX - New Business 3/2026":"006Uu00000Sg6VXIAZ",
-    "Flashlight Learning - New Business 4/2026":"006Uu00000SujghIAB",
-    "BlueMatrix - New Business 5/2026":"006Uu00000SxJZZIA3",
-    "PCMI - New Business 4/2026":"006Uu00000T0kdFIAR",
-    "Procurement Partners - New Business 4/2026":"006Uu00000T5DiIIAV",
-    "137 Ventures - New Business 4/2026":"006Uu00000T6MBgIAN",
-    "Level AI - New Business 4/2026":"006Uu00000T6qkoIAB",
-    "CCT - New Business 4/2026":"006Uu00000T8G6wIAF",
-    "Pinebrook Group - New Business 5/2026":"006Uu00000TGYHyIAP",
-    "Procede Software - New Business 5/2026":"006Uu00000TOo9RIAT",
-    "TurboTenant - New Business 4/2026":"006Uu00000TQ6cEIAT",
-    "Solarity - New Business 5/2026":"006Uu00000TVRrFIAX",
-    "Happl - New Business 5/2026":"006Uu00000Tfql8IAB",
-    "American AI Logistics - New Business 5/2026":"006Uu00000TgerdIAB",
-    "Causa Prima - New Business 5/2026":"006Uu00000TopUrIAJ",
-    "Circadian Risk Inc. - New Business 4/2026":"006Uu00000TrygTIAR",
-    "Affordable American Insurance - New Business 5/2026":"006Uu00000U8MAAIA3",
-    "SurfaceAI - New Business 5/2026":"006Uu00000UHTikIAH",
-    "Recycle Track Systems - New Business 5/2026":"006Uu00000UcfCDIAZ",
-  };
-  // ── Config ──────────────────────────────────
-  // Ordered most-mature → least (Closed Lost handled separately)
-  const ACTIVE_STAGES = [
-    "Closed Won",
-    "6 - Verbal Commit",
-    "5 - Negotiation",
-    "4 - Solution Validation",
-    "3 - Technical Alignment",
-    "2 - Discovery",
-    "1 - Qualification",
-  ];
+  const OPEN_STAGES = ['1 - Qualification','2 - Discovery','3 - Technical Alignment',
+                       '4 - Solution Validation','5 - Negotiation','6 - Verbal Commit'];
+  const STAGE_ORDER = [...OPEN_STAGES, 'Closed Won', 'Closed Lost'];
 
-  const STAGE_COLORS = {
-    "Closed Won":              { bg:"rgba(16,185,129,0.12)",  bar:"#10b981", text:"#6ee7b7",  pill_bg:"rgba(16,185,129,0.15)",  pill_bd:"rgba(16,185,129,0.4)"  },
-    "6 - Verbal Commit":       { bg:"rgba(139,92,246,0.10)", bar:"#8b5cf6", text:"#c4b5fd",  pill_bg:"rgba(139,92,246,0.15)",  pill_bd:"rgba(139,92,246,0.4)"  },
-    "5 - Negotiation":         { bg:"rgba(236,72,153,0.10)", bar:"#ec4899", text:"#f9a8d4",  pill_bg:"rgba(236,72,153,0.15)",  pill_bd:"rgba(236,72,153,0.4)"  },
-    "4 - Solution Validation": { bg:"rgba(249,115,22,0.10)", bar:"#f97316", text:"#fdba74",  pill_bg:"rgba(249,115,22,0.15)",  pill_bd:"rgba(249,115,22,0.4)"  },
-    "3 - Technical Alignment": { bg:"rgba(245,158,11,0.10)", bar:"#f59e0b", text:"#fcd34d",  pill_bg:"rgba(245,158,11,0.15)",  pill_bd:"rgba(245,158,11,0.4)"  },
-    "2 - Discovery":           { bg:"rgba(6,182,212,0.10)",  bar:"#06b6d4", text:"#67e8f9",  pill_bg:"rgba(6,182,212,0.15)",   pill_bd:"rgba(6,182,212,0.4)"   },
-    "1 - Qualification":       { bg:"rgba(99,102,241,0.10)", bar:"#6366f1", text:"#a5b4fc",  pill_bg:"rgba(99,102,241,0.15)",  pill_bd:"rgba(99,102,241,0.4)"  },
-    "Closed Lost":             { bg:"rgba(100,116,139,0.08)",bar:"#475569", text:"#64748b",  pill_bg:"rgba(100,116,139,0.12)", pill_bd:"rgba(100,116,139,0.3)" },
-  };
+  // Use open deals from _allDeals
+  const openDeals = _allDeals.filter(d => OPEN_STAGES.includes(d.StageName || d.stage));
 
-  const MONTH_LABELS = { "2026-01":"Jan '26","2026-02":"Feb '26","2026-03":"Mar '26","2026-04":"Apr '26","2026-05":"May '26","2026-06":"Jun '26" };
-
-  const PERIODS = [
-    { key:"ytd",     label:"YTD" },
-    { key:"2026-06", label:"Jun" },
-    { key:"2026-05", label:"May" },
-    { key:"2026-04", label:"Apr" },
-    { key:"2026-03", label:"Mar" },
-    { key:"2026-02", label:"Feb" },
-    { key:"2026-01", label:"Jan" },
-  ];
-
-  let activePeriod = "ytd";
-  // Which stage groups are expanded — Closed Won open by default
-  const expandedStages = new Set();
-  let lostExpanded = false;
-
-  // ── Helpers ─────────────────────────────────
-  function fmt(n) {
-    if (!n && n !== 0) return '—';
-    return '$' + (n >= 1000 ? (n/1000).toFixed(1).replace(/\.0$/,'') + 'K' : n.toLocaleString());
-  }
-
-  function stagePill(stage) {
-    const c = STAGE_COLORS[stage] || STAGE_COLORS["1 - Qualification"];
-    const label = stage.replace(/^\d+ - /, '');
-    return `<span style="display:inline-block;padding:2px 9px;border-radius:20px;font-size:10px;font-weight:600;letter-spacing:.3px;background:${c.pill_bg};border:1px solid ${c.pill_bd};color:${c.text};white-space:nowrap;">${label}</span>`;
-  }
-
-  function buildDealTable(deals, isWon) {
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'overflow-x:auto;padding:2px 0 10px;';
-    const tbl = document.createElement('table');
-    tbl.style.cssText = 'width:100%;';
-    tbl.innerHTML = `<thead><tr>
-      <th style="padding-left:20px;">Deal</th>
-      <th>Partner</th><th>Type</th>
-      <th style="text-align:right">ARR</th>
-      <th>Originated</th>
-    </tr></thead>`;
-    const tbody = document.createElement('tbody');
-    deals.slice().sort((a,b) => a[5].localeCompare(b[5])).forEach(([name,,partner,arr,,month]) => {
-      const ptype = ALL_PARTNER_TYPES[partner] || '—';
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td style="padding-left:20px;color:${isWon?'#e2e8f0':'#94a3b8'};max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}</td>
-        <td style="color:#64748b;">${partner}</td>
-        <td style="color:#475569;font-size:12px;">${ptype}</td>
-        <td class="num" style="color:${isWon?'#6ee7b7':'#f1f5f9'};font-weight:600;">${fmt(arr)}</td>
-        <td style="color:#475569;font-size:12px;white-space:nowrap;">${MONTH_LABELS[month]||month}</td>
-      `;
-      tbody.appendChild(tr);
-    });
-    tbl.appendChild(tbody);
-    wrap.appendChild(tbl);
-    return wrap;
-  }
-
-  function buildAccordionItem(stage, deals, isExpanded, onToggle) {
-    const c = STAGE_COLORS[stage];
-    const isWon = stage === 'Closed Won';
-    const isLost = stage === 'Closed Lost';
-    const stageArr = deals.reduce((s,d) => s + (d[3]||0), 0);
-
-    const item = document.createElement('div');
-    item.style.cssText = 'margin-bottom:5px;border-radius:10px;overflow:hidden;border:1px solid #1e293b;';
-
-    // Header row
-    const hdr = document.createElement('div');
-    hdr.style.cssText = `display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;background:${c.bg};user-select:none;`;
-    hdr.innerHTML = `
-      <span class="chev" style="font-size:10px;color:#475569;transition:transform .18s;display:inline-block;transform:rotate(${isExpanded?'90':'0'}deg);">▶</span>
-      ${stagePill(stage)}
-      <span style="font-size:12px;color:#475569;flex-shrink:0;">${deals.length} deal${deals.length!==1?'s':''}</span>
-      <div style="flex:1;height:3px;background:rgba(255,255,255,0.05);border-radius:2px;overflow:hidden;min-width:40px;">
-        <div class="stgbar" style="height:100%;background:${c.bar};border-radius:2px;opacity:0.7;"></div>
-      </div>
-      <span style="font-size:16px;font-weight:800;letter-spacing:-.6px;color:${isWon?'#34d399':isLost?'#475569':'#f1f5f9'};flex-shrink:0;min-width:72px;text-align:right;">${fmt(stageArr)}</span>
-    `;
-
-    // Body
-    const body = document.createElement('div');
-    body.style.cssText = `display:${isExpanded?'block':'none'};background:#0d1117;border-top:1px solid #1e293b;`;
-    body.appendChild(buildDealTable(deals, isWon));
-
-    hdr.addEventListener('click', () => {
-      const open = body.style.display !== 'none';
-      body.style.display = open ? 'none' : 'block';
-      hdr.querySelector('.chev').style.transform = open ? 'rotate(0deg)' : 'rotate(90deg)';
-      onToggle(!open);
-    });
-
-    item.appendChild(hdr);
-    item.appendChild(body);
-    return { el: item, barEl: item.querySelector('.stgbar') };
-  }
-
-  // ── Render ───────────────────────────────────
-  function render() {
-    const all = activePeriod === 'ytd' ? RAW.slice() : RAW.filter(d => {
-        if (d[1] === 'Closed Won') return (d[6] || d[5]) === activePeriod; // use close_month for won deals
-        return d[5] === activePeriod; // use create_month for pipeline/lost
-      });
-    const active = all.filter(d => d[1] !== 'Closed Lost');
-    const lost   = all.filter(d => d[1] === 'Closed Lost');
-
-    // Group by stage
-    const byStage = {};
-    ACTIVE_STAGES.forEach(s => byStage[s] = []);
-    active.forEach(d => { if (byStage[d[1]]) byStage[d[1]].push(d); });
-
-    const wonArr      = (byStage['Closed Won'] || []).reduce((s,d) => s + d[3], 0);
-    const pipelineArr = ACTIVE_STAGES.filter(s => s !== 'Closed Won')
-                          .reduce((s, st) => s + (byStage[st]||[]).reduce((x,d) => x + d[3], 0), 0);
-    const openDeals   = active.filter(d => d[1] !== 'Closed Won').length;
-
-    // Max stage ARR for proportional bars (across all stages)
-    const stageTotals = ACTIVE_STAGES.map(s => (byStage[s]||[]).reduce((x,d) => x+d[3],0));
-    const maxArr = Math.max(...stageTotals, 1);
-
-    // Summary strip
-    const strip = document.getElementById('dealSummaryStrip');
-    strip.innerHTML = `
-      <div style="background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.2);border-radius:10px;padding:12px 16px;">
-        <div style="font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#10b981;margin-bottom:5px;">Revenue Won</div>
-        <div style="font-size:22px;font-weight:800;letter-spacing:-.7px;color:#34d399;">${fmt(wonArr)}</div>
-        <div style="font-size:11px;color:#475569;margin-top:3px;">${byStage['Closed Won'].length} deals closed</div>
-      </div>
-      <div style="background:rgba(99,102,241,0.07);border:1px solid rgba(99,102,241,0.2);border-radius:10px;padding:12px 16px;">
-        <div style="font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#6366f1;margin-bottom:5px;">Open Pipeline</div>
-        <div style="font-size:22px;font-weight:800;letter-spacing:-.7px;color:#a5b4fc;">${fmt(pipelineArr)}</div>
-        <div style="font-size:11px;color:#475569;margin-top:3px;">${openDeals} open deals</div>
-      </div>
-      <div style="background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.2);border-radius:10px;padding:12px 16px;">
-        <div style="font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#f59e0b;margin-bottom:5px;">Potential Upside</div>
-        <div style="font-size:22px;font-weight:800;letter-spacing:-.7px;color:#fcd34d;">${fmt(wonArr + pipelineArr)}</div>
-        <div style="font-size:11px;color:#475569;margin-top:3px;">won + full pipeline</div>
-      </div>
-    `;
-
-    // Stage accordion
-    const accordion = document.getElementById('stageAccordion');
-    accordion.innerHTML = '';
-    ACTIVE_STAGES.forEach((stage, i) => {
-      const deals = byStage[stage];
-      if (!deals.length) return;
-      const { el, barEl } = buildAccordionItem(
-        stage, deals, expandedStages.has(stage),
-        open => open ? expandedStages.add(stage) : expandedStages.delete(stage)
-      );
-      const pct = stageTotals[i] / maxArr * 100;
-      barEl.style.width = pct + '%';
-      accordion.appendChild(el);
-    });
-
-    // Closed Lost accordion (separate, dimmed)
-    const lostEl = document.getElementById('lostAccordion');
-    lostEl.innerHTML = '';
-    if (lost.length) {
-      const lostArr = lost.reduce((s,d) => s + d[3], 0);
-      const { el } = buildAccordionItem('Closed Lost', lost, lostExpanded, open => { lostExpanded = open; });
-      // Override bar width based on lost vs max active stage
-      const barPct = lostArr / maxArr * 100;
-      el.querySelector('.stgbar').style.width = Math.min(barPct, 100) + '%';
-      lostEl.appendChild(el);
-    }
-  }
-
-  // Period toggle
-  const toggleEl = document.getElementById('dealPeriodToggle');
-  PERIODS.forEach(p => {
-    const btn = document.createElement('button');
-    btn.className = 'toggle-btn' + (p.key === activePeriod ? ' active' : '');
-    btn.textContent = p.label;
-    btn.addEventListener('click', () => {
-      activePeriod = p.key;
-      toggleEl.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      render();
-    });
-    toggleEl.appendChild(btn);
+  // Group by stage
+  const byStage = {};
+  STAGE_ORDER.forEach(s => { byStage[s] = []; });
+  openDeals.forEach(d => {
+    const s = d.StageName || d.stage;
+    if (byStage[s]) byStage[s].push(d);
   });
 
-  render();
-})();
+  // Find accordion container
+  const container = document.getElementById('stageAccordion');
+  if (!container) return;
+  container.innerHTML = '';
 
-// ─────────────────────────────────────────────
+  const STAGE_COLORS = {
+    '1 - Qualification':'#475569','2 - Discovery':'#6366f1',
+    '3 - Technical Alignment':'#8b5cf6','4 - Solution Validation':'#06b6d4',
+    '5 - Negotiation':'#10b981','6 - Verbal Commit':'#34d399',
+  };
+
+  OPEN_STAGES.forEach(stage => {
+    const deals = byStage[stage];
+    if (!deals.length) return;
+    const totalArr = deals.reduce((s,d) => s + +(d.cARR__c || d.arr || 0), 0);
+    const color = STAGE_COLORS[stage] || '#475569';
+
+    const section = document.createElement('div');
+    section.style.cssText = 'border:1px solid #1e293b;border-radius:10px;overflow:hidden;margin-bottom:8px;';
+
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;background:#111827;user-select:none;';
+    header.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></span>
+        <span style="font-size:13px;font-weight:600;color:#e2e8f0;">${stage}</span>
+        <span style="font-size:11px;color:#475569;background:#1e293b;padding:2px 8px;border-radius:99px;">${deals.length} deal${deals.length!==1?'s':''}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span style="font-size:13px;font-weight:700;color:#f1f5f9;">$${Math.round(totalArr/1000)}K</span>
+        <span style="font-size:12px;color:#475569;">▼</span>
+      </div>`;
+
+    const body = document.createElement('div');
+    body.style.cssText = 'display:none;';
+    body.innerHTML = deals.map(d => {
+      const arr = +(d.cARR__c || d.arr || 0);
+      const id  = d.Id || d.id || '';
+      const link = id ? `href="${SF_BASE}${id}/view" target="_blank"` : '';
+      return `<div style="display:grid;grid-template-columns:1fr 120px 100px 80px;padding:10px 16px;border-top:1px solid #0a0d14;background:#0f172a;align-items:center;gap:8px;">
+        <a ${link} style="font-size:12px;color:#94a3b8;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${d.Name||d.name||''}">${d.Name||d.name||'—'}</a>
+        <span style="font-size:11px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${d.partner||'—'}</span>
+        <span style="font-size:11px;color:#475569;">${d.close_month||d.closeMonth||'—'}</span>
+        <span style="font-size:12px;font-weight:600;color:#e2e8f0;text-align:right;">$${Math.round(arr/1000)}K</span>
+      </div>`;
+    }).join('');
+
+    header.addEventListener('click', () => {
+      const open = body.style.display !== 'none';
+      body.style.display = open ? 'none' : 'block';
+      header.querySelector('span:last-child').textContent = open ? '▼' : '▲';
+    });
+
+    section.appendChild(header);
+    section.appendChild(body);
+    container.appendChild(section);
+  });
+}
 // TAB NAVIGATION
 // ─────────────────────────────────────────────
 (function() {
@@ -2452,6 +1813,14 @@ async function loadDashboard() {
     _rilletData   = (data.rillet || []).map(r => ({ month: r.month, arr: +r.arr }));
     _referralData = (data.referral || []).map(r => ({ month: r.month, partners: +r.partners }));
 
+    // Populate new data vars
+    _splitData   = (data.split     || []).map(r => ({ month: r.month, type: r.type, deals: +r.deals, arr: +r.arr }));
+    _cohortData  = (data.cohort    || []).map(r => ({ cohort_month: r.cohort_month, close_month: r.close_month, deals: +r.deals }));
+    _allDeals    = (data.allDeals  || []).map(r => ({
+      Id: r.Id, Name: r.Name, StageName: r.StageName, cARR__c: +r.cARR__c, LeadSource: r.LeadSource,
+      partner: r.partner, create_month: r.create_month, close_month: r.close_month
+    }));
+
     // Derive raw (monthly CW totals) from lbRows
     const rawMap = {};
     lbRows.forEach(r => {
@@ -2473,6 +1842,10 @@ async function loadDashboard() {
     initPipelineType();
     initPctChart();
     initReferralChart();
+    initSplitChart();
+    initFunnelTable();
+    initCohortChart();
+    initPipelineAccordion();
     updateKpiCards();
 
   } catch (err) {
