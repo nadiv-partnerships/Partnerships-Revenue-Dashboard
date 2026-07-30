@@ -79,12 +79,13 @@ module.exports = async (req, res) => {
          GROUP BY FORMAT([CloseDate],'yyyy-MM')
          ORDER BY month`),
 
-      // 3. All opps by CREATE month  →  pipeline sourced area chart (all stages, matches SF report)
+      // 3. Open pipeline by CREATE month  →  pipeline sourced area chart (open only, matches type table)
       Q(`SELECT FORMAT(o.[CreatedDate],'yyyy-MM') as month,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as cnt
          FROM [${CONN}].[Salesforce].[Opportunity] o
-         WHERE o.[LeadSource] IN ${PARTNER_SOURCES}
+         WHERE o.[StageName] NOT IN ('Closed Won','Closed Lost')
+           AND o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
            AND o.[Relevant_Partner__c] IS NOT NULL
          GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM')
