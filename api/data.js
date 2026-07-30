@@ -79,14 +79,14 @@ module.exports = async (req, res) => {
          GROUP BY FORMAT([CloseDate],'yyyy-MM')
          ORDER BY month`),
 
-      // 3. All opps by CREATE month  →  pipeline sourced area chart (all stages = total generated)
+      // 3. All opps by CREATE month  →  pipeline sourced area chart (matches SF report: IS NOT NULL)
       Q(`SELECT FORMAT(o.[CreatedDate],'yyyy-MM') as month,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as cnt
          FROM [${CONN}].[Salesforce].[Opportunity] o
          WHERE o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
-           AND o.[CloseDate] >= o.[CreatedDate]
+           AND o.[Relevant_Partner__c] IS NOT NULL
          GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM')
          ORDER BY month`),
 
@@ -101,7 +101,7 @@ module.exports = async (req, res) => {
          WHERE o.[StageName] NOT IN ('Closed Won','Closed Lost')
            AND o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
-           AND o.[CloseDate] >= o.[CreatedDate]
+           AND o.[Relevant_Partner__c] IS NOT NULL
          GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM'),
                   ${PARTNER_NAME}
          ORDER BY month, arr DESC`),
@@ -129,7 +129,7 @@ module.exports = async (req, res) => {
          FROM [${CONN}].[Salesforce].[Opportunity] o
          WHERE o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
-           AND o.[CloseDate] >= o.[CreatedDate]
+           AND o.[Relevant_Partner__c] IS NOT NULL
          GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM'),
                   CASE WHEN o.[LeadSource] = 'Partner - Resell' THEN 'resell' ELSE 'inbound' END
          ORDER BY month`),
@@ -142,7 +142,7 @@ module.exports = async (req, res) => {
          WHERE o.[StageName] = 'Closed Won'
            AND o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
-           AND o.[CloseDate] >= o.[CreatedDate]
+           AND o.[Relevant_Partner__c] IS NOT NULL
          GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM'), FORMAT(o.[CloseDate],'yyyy-MM')
          ORDER BY cohort_month, close_month`),
 
@@ -155,7 +155,7 @@ module.exports = async (req, res) => {
          LEFT JOIN [${CONN}].[Salesforce].[Account] a ON o.[Relevant_Partner__c] = a.[Id]
          WHERE o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
-           AND o.[CloseDate] >= o.[CreatedDate]
+           AND o.[Relevant_Partner__c] IS NOT NULL
          ORDER BY o.[CloseDate], o.[cARR__c] DESC`),
     ]);
 

@@ -360,7 +360,7 @@
   <div class="chart-header">
     <div>
       <div class="chart-title">Deal Close Velocity by Cohort</div>
-      <div class="chart-subtitle">Cumulative % of deals closed won by month after origination · May '26 dotted (in progress)</div>
+      <div class="chart-subtitle">Win rate = Closed Won ÷ (Closed Won + Closed Lost) · cumulative by month after origination</div>
     </div>
     <div id="cohortToggle" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
   </div>
@@ -1414,12 +1414,15 @@ let _cohortData = [];
 function initCohortChart() {
   const existing = Chart.getChart(document.getElementById('cohortChart'));
   if (existing) existing.destroy();
-  if (!_cohortData.length || !_splitData.length) return;
+  if (!_cohortData.length || !_allDeals.length) return;
 
-  // Total created per cohort month from split data
+  // Denominator = closed deals only (won + lost) per cohort month
+  // This gives true win rate among deals that reached a decision
   const totalByMonth = {};
-  _splitData.forEach(r => {
-    totalByMonth[r.month] = (totalByMonth[r.month] || 0) + +r.deals;
+  _allDeals.forEach(d => {
+    if (d.StageName === 'Closed Won' || d.StageName === 'Closed Lost') {
+      totalByMonth[d.create_month] = (totalByMonth[d.create_month] || 0) + 1;
+    }
   });
 
   // CW wins per cohort: { cohort_month: { offset: count } }
