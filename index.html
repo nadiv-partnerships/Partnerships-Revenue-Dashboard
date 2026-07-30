@@ -235,7 +235,7 @@
     <div class="sub" id="kpi-pl-mtd-sub">Loading…</div>
   </div>
   <div class="kpi-card" style="--accent:linear-gradient(90deg,#06b6d4,#6366f1)">
-    <div class="label">Partner % of Revenue</div>
+    <div class="label">MTD Partner as % of Rillet Total Revenue</div>
     <div class="value" id="kpi-pct">—%</div>
     <div class="sub" id="kpi-pct-sub">Loading…</div>
   </div>
@@ -360,7 +360,7 @@
   <div class="chart-header">
     <div>
       <div class="chart-title">Deal Close Velocity by Cohort</div>
-      <div class="chart-subtitle">Cumulative % of deals closed won by month after origination · white line = all cohorts combined</div>
+      <div class="chart-subtitle">Cumulative % of deals closed won by month after origination · white = partner overall · grey = Rillet overall</div>
     </div>
     <div id="cohortToggle" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
   </div>
@@ -1410,6 +1410,8 @@ function initSplitChart() {
 // DEAL CLOSE VELOCITY COHORT CHART
 // ─────────────────────────────────────────────
 let _cohortData = [];
+let _rilletCohort = [];
+let _rilletTotal = {};
 
 function initCohortChart() {
   const existing = Chart.getChart(document.getElementById('cohortChart'));
@@ -1463,7 +1465,7 @@ function initCohortChart() {
       label, data,
       borderColor: color, backgroundColor: 'transparent',
       borderWidth: 2,
-      hidden: false,
+      hidden: i === 0,  // Jan hidden by default
       ...(isCurrentMonth ? { borderDash: [5,4] } : {}),
       pointBackgroundColor: color, pointBorderColor: '#0a0d14',
       pointBorderWidth: 2,
@@ -1497,17 +1499,56 @@ function initCohortChart() {
     borderColor: '#ffffff',
     backgroundColor: 'transparent',
     borderWidth: 2.5,
-    borderDash: [],
     hidden: false,
-    pointBackgroundColor: '#ffffff',
-    pointBorderColor: '#0a0d14',
+    pointBackgroundColor: '#ffffff', pointBorderColor: '#0a0d14',
     pointBorderWidth: 2,
     pointRadius: overallData.map(v => v !== null ? 5 : 0),
     pointHoverRadius: 7, tension: 0.3, spanGaps: false,
-    order: -1, // draw on top
+    order: -1,
   };
 
-  const datasets = [...cohortDatasets, overallDataset];
+  // Rillet Overall: blended win rate across ALL Rillet deals (benchmark comparison)
+  const rilletWinsByOffset = {};
+  _rilletCohort.forEach(r => {
+    const cohortDate = new Date(r.cohort_month + '-01');
+    const closeDate  = new Date(r.close_month  + '-01');
+    const offset = (closeDate.getFullYear() - cohortDate.getFullYear()) * 12
+                 + (closeDate.getMonth()    - cohortDate.getMonth());
+    if (!rilletWinsByOffset[r.cohort_month]) rilletWinsByOffset[r.cohort_month] = {};
+    rilletWinsByOffset[r.cohort_month][offset] = (rilletWinsByOffset[r.cohort_month][offset] || 0) + +r.deals;
+  });
+  const rilletMonths = Object.keys(_rilletTotal).sort();
+  const rilletOverallData = X_LABELS.map((_, j) => {
+    let cumWins = 0, eligibleTotal = 0;
+    rilletMonths.forEach(m => {
+      const cohortDate = new Date(m + '-01');
+      const elapsed = (today.getFullYear() - cohortDate.getFullYear()) * 12
+                    + (today.getMonth()    - cohortDate.getMonth());
+      if (elapsed < j) return;
+      eligibleTotal += (_rilletTotal[m] || 0);
+      const wins = rilletWinsByOffset[m] || {};
+      for (let k = 0; k <= j; k++) cumWins += (wins[k] || 0);
+    });
+    if (eligibleTotal === 0) return null;
+    return +(cumWins / eligibleTotal * 100).toFixed(1);
+  });
+
+  const rilletOverallDataset = {
+    label: 'Rillet Overall',
+    data: rilletOverallData,
+    borderColor: '#94a3b8',
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderDash: [4, 3],
+    hidden: false,
+    pointBackgroundColor: '#94a3b8', pointBorderColor: '#0a0d14',
+    pointBorderWidth: 2,
+    pointRadius: rilletOverallData.map(v => v !== null ? 4 : 0),
+    pointHoverRadius: 6, tension: 0.3, spanGaps: false,
+    order: -1,
+  };
+
+  const datasets = [...cohortDatasets, overallDataset, rilletOverallDataset];
 
   const cohortChart = new Chart(document.getElementById('cohortChart').getContext('2d'), {
     type: 'line',
@@ -1854,6 +1895,9 @@ async function loadDashboard() {
     // Populate new data vars
     _splitData   = (data.split     || []).map(r => ({ month: r.month, type: r.type, deals: +r.deals, arr: +r.arr }));
     _cohortData  = (data.cohort    || []).map(r => ({ cohort_month: r.cohort_month, close_month: r.close_month, deals: +r.deals }));
+    _rilletCohort = (data.rilletCohort || []).map(r => ({ cohort_month: r.cohort_month, close_month: r.close_month, deals: +r.deals }));
+    _rilletTotal = {};
+    (data.rilletTotal || []).forEach(r => { _rilletTotal[r.month] = +r.deals; });
     _allDeals    = (data.allDeals  || []).map(r => ({
       Id: r.Id, Name: r.Name, StageName: r.StageName, cARR__c: +r.cARR__c, LeadSource: r.LeadSource,
       partner: r.partner, create_month: r.create_month, close_month: r.close_month

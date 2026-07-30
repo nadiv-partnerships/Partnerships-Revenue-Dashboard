@@ -159,15 +159,38 @@ module.exports = async (req, res) => {
          ORDER BY o.[CloseDate], o.[cARR__c] DESC`),
     ]);
 
+    const [rilletCohortRes, rilletTotalRes] = await Promise.all([
+
+      // 9. All Rillet CW by cohort+close month → Rillet Overall cohort line
+      Q(`SELECT FORMAT([CreatedDate],'yyyy-MM') as cohort_month,
+                FORMAT([CloseDate],'yyyy-MM') as close_month,
+                COUNT(*) as deals
+         FROM [${CONN}].[Salesforce].[Opportunity]
+         WHERE [StageName] = 'Closed Won'
+           AND [CreatedDate] >= '${START_DATE}'
+         GROUP BY FORMAT([CreatedDate],'yyyy-MM'), FORMAT([CloseDate],'yyyy-MM')
+         ORDER BY cohort_month, close_month`),
+
+      // 10. All Rillet opps by create month → denominator for Rillet Overall line
+      Q(`SELECT FORMAT([CreatedDate],'yyyy-MM') as month,
+                COUNT(*) as deals
+         FROM [${CONN}].[Salesforce].[Opportunity]
+         WHERE [CreatedDate] >= '${START_DATE}'
+         GROUP BY FORMAT([CreatedDate],'yyyy-MM')
+         ORDER BY month`),
+    ]);
+
     res.status(200).json({
       lb:          lbRes.recordset,
       rillet:      rilletRes.recordset,
       plChart:     plChartRes.recordset,
       pl:          plRes.recordset,
       referral:    referralRes.recordset,
-      split:       splitRes.recordset,    // [{month, type, deals, arr}]
-      cohort:      cohortRes.recordset,   // [{cohort_month, close_month, deals}]
-      allDeals:    allDealsRes.recordset, // [{id, name, stage, arr, partner, create_month, close_month}]
+      split:       splitRes.recordset,
+      cohort:      cohortRes.recordset,
+      allDeals:      allDealsRes.recordset,
+      rilletCohort:  rilletCohortRes.recordset,  // [{cohort_month, close_month, deals}] all Rillet
+      rilletTotal:   rilletTotalRes.recordset,    // [{month, deals}] all Rillet
       generatedAt: new Date().toISOString(),
     });
 
