@@ -11,6 +11,10 @@ const PARTNER_SOURCES = `('Inbound - Partner','Partner - Resell','Outbound - Par
 const START_DATE = '2026-01-01';
 const CONN = 'Salesforce1';
 
+// Partner name helper: NULL or person-account (0018a...) → 'Unattributed'
+const PARTNER_NAME = `CASE WHEN o.[Relevant_Partner__c] IS NULL OR o.[Relevant_Partner__c] LIKE '0018a%'
+                           THEN 'Unattributed' ELSE a.[Name] END`;
+
 let pool = null;
 
 async function getPool() {
@@ -49,8 +53,9 @@ module.exports = async (req, res) => {
     const [lbRes, rilletRes, plChartRes, plRes, referralRes] = await Promise.all([
 
       // 1. Partner CW ARR by partner + close month  →  lbRows + raw monthly totals
+      //    LeadSource-only definition; NULL/person-account partners → 'Unattributed'
       Q(`SELECT FORMAT(o.[CloseDate],'yyyy-MM') as month,
-                a.[Name] as partner,
+                ${PARTNER_NAME} as partner,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as deals
          FROM [${CONN}].[Salesforce].[Opportunity] o
@@ -60,9 +65,8 @@ module.exports = async (req, res) => {
            AND o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CloseDate] >= '${START_DATE}'
            AND o.[CloseDate] >= o.[CreatedDate]
-           AND o.[Relevant_Partner__c] IS NOT NULL
-           AND o.[Relevant_Partner__c] NOT LIKE '0018a%'
-         GROUP BY FORMAT(o.[CloseDate],'yyyy-MM'), a.[Name]
+         GROUP BY FORMAT(o.[CloseDate],'yyyy-MM'),
+                  ${PARTNER_NAME}
          ORDER BY month, arr DESC`),
 
       // 2. Total Rillet CW ARR by close month  →  % of revenue chart denominator
@@ -75,7 +79,7 @@ module.exports = async (req, res) => {
          GROUP BY FORMAT([CloseDate],'yyyy-MM')
          ORDER BY month`),
 
-      // 3. Partner pipeline by CREATE month  →  "pipeline sourced" area chart
+      // 3. All opps by CREATE month  →  pipeline sourced area chart (all stages = total generated)
       Q(`SELECT FORMAT(o.[CreatedDate],'yyyy-MM') as month,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as cnt
@@ -83,14 +87,12 @@ module.exports = async (req, res) => {
          WHERE o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
            AND o.[CloseDate] >= o.[CreatedDate]
-           AND o.[Relevant_Partner__c] IS NOT NULL
-           AND o.[Relevant_Partner__c] NOT LIKE '0018a%'
          GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM')
          ORDER BY month`),
 
       // 4. Open pipeline by CreatedDate + partner  →  plRows / pipeline type table / originated leaderboard
       Q(`SELECT FORMAT(o.[CreatedDate],'yyyy-MM') as month,
-                a.[Name] as partner,
+                ${PARTNER_NAME} as partner,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as opps
          FROM [${CONN}].[Salesforce].[Opportunity] o
@@ -100,12 +102,12 @@ module.exports = async (req, res) => {
            AND o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
            AND o.[CloseDate] >= o.[CreatedDate]
-           AND o.[Relevant_Partner__c] IS NOT NULL
-           AND o.[Relevant_Partner__c] NOT LIKE '0018a%'
-         GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM'), a.[Name]
+         GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM'),
+                  ${PARTNER_NAME}
          ORDER BY month, arr DESC`),
 
-      // 5. Distinct active partners per create month  →  referral activity chart
+      // 5. Distinct active company partners per create month  →  referral activity chart
+      //    Keep person-account filter here: we want real company partner count
       Q(`SELECT FORMAT(o.[CreatedDate],'yyyy-MM') as month,
                 COUNT(DISTINCT o.[Relevant_Partner__c]) as partners
          FROM [${CONN}].[Salesforce].[Opportunity] o
@@ -128,8 +130,6 @@ module.exports = async (req, res) => {
          WHERE o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
            AND o.[CloseDate] >= o.[CreatedDate]
-           AND o.[Relevant_Partner__c] IS NOT NULL
-           AND o.[Relevant_Partner__c] NOT LIKE '0018a%'
          GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM'),
                   CASE WHEN o.[LeadSource] = 'Partner - Resell' THEN 'resell' ELSE 'inbound' END
          ORDER BY month`),
@@ -143,14 +143,12 @@ module.exports = async (req, res) => {
            AND o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
            AND o.[CloseDate] >= o.[CreatedDate]
-           AND o.[Relevant_Partner__c] IS NOT NULL
-           AND o.[Relevant_Partner__c] NOT LIKE '0018a%'
          GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM'), FORMAT(o.[CloseDate],'yyyy-MM')
          ORDER BY cohort_month, close_month`),
 
       // 8. All opps (all stages) individual records → funnel table + pipeline accordion
       Q(`SELECT o.[Id], o.[Name], o.[StageName], o.[cARR__c], o.[LeadSource],
-                a.[Name] as partner,
+                ${PARTNER_NAME} as partner,
                 FORMAT(o.[CreatedDate],'yyyy-MM') as create_month,
                 FORMAT(o.[CloseDate],'yyyy-MM') as close_month
          FROM [${CONN}].[Salesforce].[Opportunity] o
@@ -158,8 +156,6 @@ module.exports = async (req, res) => {
          WHERE o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
            AND o.[CloseDate] >= o.[CreatedDate]
-           AND o.[Relevant_Partner__c] IS NOT NULL
-           AND o.[Relevant_Partner__c] NOT LIKE '0018a%'
          ORDER BY o.[CloseDate], o.[cARR__c] DESC`),
     ]);
 
