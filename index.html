@@ -293,30 +293,7 @@
 
 </div>
 
-<!-- Sourced vs Influenced Revenue Chart -->
-<div class="chart-card">
-  <div class="chart-header">
-    <div>
-      <div class="chart-title">Partner Sourced vs. Influenced Revenue</div>
-      <div class="chart-subtitle">Closed Won ARR by close month · sourced = partner lead source · influenced = Partner Influenced ✓ (excl. sourced)</div>
-    </div>
-    <div class="legend-row">
-      <div class="legend-item"><div class="legend-dot" style="background:#6366f1"></div>Sourced</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#06b6d4"></div>Influenced</div>
-    </div>
-  </div>
-  <div class="chart-wrap" style="height:240px"><canvas id="influenceChart"></canvas></div>
-</div>
-
-</div><!-- /sec-overview -->
-
-<!-- ══ PIPELINE ══════════════════════════════ -->
-<div id="sec-pipeline" class="dash-section">
-<div style="margin:0 0 16px">
-  <div style="font-size:13px;font-weight:700;color:#64748b;letter-spacing:1px;text-transform:uppercase;">All Partner Pipeline Generated</div>
-  <div style="height:1px;background:#1e293b;margin-top:8px"></div>
-</div>
-
+<!-- Pipeline Origination -->
 <div style="display:grid;grid-template-columns:1fr 340px;gap:16px;margin-bottom:24px;">
 
   <div class="chart-card" style="margin-bottom:0">
@@ -348,6 +325,61 @@
   </div>
 
 </div>
+
+<!-- Partner Revenue % of Rillet Revenue -->
+<div class="chart-card">
+  <div class="chart-header">
+    <div>
+      <div class="chart-title">Partner Revenue as % of Rillet Revenue</div>
+      <div class="chart-subtitle">Monthly closed won cARR from partner deals ÷ total Rillet closed won cARR · dashed line = YTD average</div>
+    </div>
+  </div>
+  <div class="chart-wrap" style="height:260px"><canvas id="partnerPctChart"></canvas></div>
+</div>
+
+<!-- Sourced vs Influenced Revenue Chart -->
+<div class="chart-card">
+  <div class="chart-header">
+    <div>
+      <div class="chart-title">Partner Sourced vs. Influenced Revenue</div>
+      <div class="chart-subtitle">Closed Won ARR by close month · sourced = partner lead source · influenced = Partner Influenced ✓ (excl. sourced)</div>
+    </div>
+    <div class="legend-row">
+      <div class="legend-item"><div class="legend-dot" style="background:#6366f1"></div>Sourced</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#06b6d4"></div>Influenced</div>
+      <div class="legend-item"><div style="width:20px;height:2px;background:#f59e0b;border-radius:1px;"></div><span style="margin-left:6px;font-size:12px;color:#94a3b8;">% Influenced</span></div>
+    </div>
+  </div>
+  <div class="chart-wrap" style="height:260px"><canvas id="influenceChart"></canvas></div>
+</div>
+
+<!-- Partner Referral Activity -->
+<div class="chart-card">
+  <div class="chart-header">
+    <div>
+      <div class="chart-title"># of Partners Sending Referrals</div>
+      <div class="chart-subtitle">Distinct partners who introduced at least one deal each month</div>
+    </div>
+  </div>
+  <div class="chart-wrap" style="height:220px"><canvas id="referralChart"></canvas></div>
+</div>
+
+<!-- Deal Close Velocity Cohort Chart -->
+<div class="chart-card">
+  <div class="chart-header">
+    <div>
+      <div class="chart-title">Deal Close Velocity by Cohort</div>
+      <div class="chart-subtitle">Cumulative % of deals closed won by month after origination · white = partner overall · grey = Rillet overall</div>
+    </div>
+    <div id="cohortToggle" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
+  </div>
+  <div class="chart-wrap" style="height:280px"><canvas id="cohortChart"></canvas></div>
+</div>
+
+</div><!-- /sec-overview -->
+
+<!-- ══ PIPELINE ══════════════════════════════ -->
+<div id="sec-pipeline" class="dash-section">
 
 <!-- Funnel Conversion by Channel -->
 <div class="chart-card" id="funnelCard">
@@ -389,43 +421,11 @@
   <div class="chart-wrap" style="height:240px"><canvas id="splitChart"></canvas></div>
 </div>
 
-<!-- Deal Close Velocity Cohort Chart -->
-<div class="chart-card">
-  <div class="chart-header">
-    <div>
-      <div class="chart-title">Deal Close Velocity by Cohort</div>
-      <div class="chart-subtitle">Cumulative % of deals closed won by month after origination · white = partner overall · grey = Rillet overall</div>
-    </div>
-    <div id="cohortToggle" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
-  </div>
-  <div class="chart-wrap" style="height:280px"><canvas id="cohortChart"></canvas></div>
-</div>
-
-<!-- Partner Revenue % of Rillet Revenue -->
-<div class="chart-card">
-  <div class="chart-header">
-    <div>
-      <div class="chart-title">Partner Revenue as % of Rillet Revenue</div>
-      <div class="chart-subtitle">Monthly closed won cARR from partner deals ÷ total Rillet closed won cARR · dashed line = YTD average (12.4%)</div>
-    </div>
-  </div>
-  <div class="chart-wrap" style="height:260px"><canvas id="partnerPctChart"></canvas></div>
-</div>
 
 </div><!-- /sec-performance -->
 
 <!-- ══ PARTNERS ════════════════════════════== -->
 <div id="sec-partners" class="dash-section">
-<!-- Partner Referral Activity -->
-<div class="chart-card">
-  <div class="chart-header">
-    <div>
-      <div class="chart-title"># of Partners Sending Referrals</div>
-      <div class="chart-subtitle">Distinct partners who introduced at least one deal each month</div>
-    </div>
-  </div>
-  <div class="chart-wrap" style="height:220px"><canvas id="referralChart"></canvas></div>
-</div>
 
 <!-- Partner Leaderboard -->
 <div class="chart-card">
@@ -1451,8 +1451,16 @@ function initInfluenceChart() {
   const months = [...new Set(_influenceData.map(r => r.month))].sort();
   const labels = months.map(monthLabel);
 
-  const sourcedData   = months.map(m => { const r = _influenceData.find(d => d.month === m && d.type === 'sourced');   return r ? +r.arr : 0; });
+  const sourcedData    = months.map(m => { const r = _influenceData.find(d => d.month === m && d.type === 'sourced');   return r ? +r.arr : 0; });
   const influencedData = months.map(m => { const r = _influenceData.find(d => d.month === m && d.type === 'influenced'); return r ? +r.arr : 0; });
+
+  // % of Rillet revenue that is influenced (excl. sourced)
+  const pctInfluenced = months.map(m => {
+    const inf = influencedData[months.indexOf(m)];
+    const rillet = _rilletData.find(r => r.month === m);
+    if (!rillet || rillet.arr <= 0) return null;
+    return parseFloat((inf / rillet.arr * 100).toFixed(1));
+  });
 
   new Chart(document.getElementById('influenceChart').getContext('2d'), {
     type: 'bar',
@@ -1464,14 +1472,30 @@ function initInfluenceChart() {
           data: sourcedData,
           backgroundColor: 'rgba(99,102,241,0.8)',
           borderColor: '#6366f1', borderWidth: 1,
-          borderRadius: 0, stack: 'a',
+          borderRadius: 0, stack: 'a', yAxisID: 'y',
         },
         {
           label: 'Influenced',
           data: influencedData,
           backgroundColor: 'rgba(6,182,212,0.8)',
           borderColor: '#06b6d4', borderWidth: 1,
-          borderRadius: 4, stack: 'a',
+          borderRadius: 4, stack: 'a', yAxisID: 'y',
+        },
+        {
+          label: '% Influenced',
+          data: pctInfluenced,
+          type: 'line',
+          yAxisID: 'pct',
+          borderColor: '#f59e0b',
+          backgroundColor: 'rgba(245,158,11,0.1)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          pointBackgroundColor: '#f59e0b',
+          tension: 0.3,
+          spanGaps: false,
+          fill: false,
+          stack: undefined,
         }
       ]
     },
@@ -1483,10 +1507,15 @@ function initInfluenceChart() {
         tooltip: {
           ...tooltipDefaults(),
           callbacks: {
-            label: ctx => ` ${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString()}`,
+            label: ctx => {
+              if (ctx.dataset.label === '% Influenced') {
+                return ctx.parsed.y != null ? ` % Influenced: ${ctx.parsed.y}%` : null;
+              }
+              return ` ${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString()}`;
+            },
             footer: items => {
-              const total = items.reduce((s,i) => s + i.parsed.y, 0);
-              return `Total: $${total.toLocaleString()}`;
+              const arrTotal = items.filter(i => i.dataset.yAxisID === 'y').reduce((s,i) => s + i.parsed.y, 0);
+              return arrTotal > 0 ? `Total ARR: $${arrTotal.toLocaleString()}` : '';
             }
           }
         }
@@ -1497,6 +1526,13 @@ function initInfluenceChart() {
           ticks: { ...scaleDefaults().y.ticks,
             callback: v => '$'+(v>=1000?(v/1000).toFixed(0)+'K':v)
           }
+        },
+        pct: {
+          position: 'right',
+          min: 0,
+          grid: { display: false },
+          border: { color: '#1e293b' },
+          ticks: { color: '#f59e0b', font: { size: 11 }, callback: v => v + '%' }
         }
       }
     }
