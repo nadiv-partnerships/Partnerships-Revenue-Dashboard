@@ -79,19 +79,18 @@ module.exports = async (req, res) => {
          GROUP BY FORMAT([CloseDate],'yyyy-MM')
          ORDER BY month`),
 
-      // 3. Open pipeline by CREATE month  →  pipeline sourced area chart (open only, matches type table)
+      // 3. All originated opps by CREATE month  →  pipeline sourced area chart (all stages, matches SFDC)
       Q(`SELECT FORMAT(o.[CreatedDate],'yyyy-MM') as month,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as cnt
          FROM [${CONN}].[Salesforce].[Opportunity] o
-         WHERE o.[StageName] NOT IN ('Closed Won','Closed Lost')
-           AND o.[LeadSource] IN ${PARTNER_SOURCES}
+         WHERE o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
            AND o.[Relevant_Partner__c] IS NOT NULL
          GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM')
          ORDER BY month`),
 
-      // 4. Open pipeline by CreatedDate + partner  →  plRows / pipeline type table / originated leaderboard
+      // 4. All originated opps by CreatedDate + partner  →  plRows / pipeline type table / originated leaderboard
       Q(`SELECT FORMAT(o.[CreatedDate],'yyyy-MM') as month,
                 ${PARTNER_NAME} as partner,
                 SUM(o.[cARR__c]) as arr,
@@ -99,8 +98,7 @@ module.exports = async (req, res) => {
          FROM [${CONN}].[Salesforce].[Opportunity] o
          LEFT JOIN [${CONN}].[Salesforce].[Account] a
                 ON o.[Relevant_Partner__c] = a.[Id]
-         WHERE o.[StageName] NOT IN ('Closed Won','Closed Lost')
-           AND o.[LeadSource] IN ${PARTNER_SOURCES}
+         WHERE o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
            AND o.[Relevant_Partner__c] IS NOT NULL
          GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM'),
