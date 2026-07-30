@@ -235,9 +235,14 @@
     <div class="sub" id="kpi-pl-mtd-sub">Loading…</div>
   </div>
   <div class="kpi-card" style="--accent:linear-gradient(90deg,#06b6d4,#6366f1)">
-    <div class="label">MTD Partner as % of Rillet Total Revenue</div>
+    <div class="label">MTD Partner Sourced as % of Rillet Revenue</div>
     <div class="value" id="kpi-pct">—%</div>
     <div class="sub" id="kpi-pct-sub">Loading…</div>
+  </div>
+  <div class="kpi-card" style="--accent:linear-gradient(90deg,#10b981,#06b6d4)">
+    <div class="label">MTD Partner Influenced as % of Rillet Revenue</div>
+    <div class="value" id="kpi-influenced-pct">—%</div>
+    <div class="sub" id="kpi-influenced-pct-sub">Loading…</div>
   </div>
 </div>
 
@@ -272,6 +277,21 @@
     </div>
   </div>
 
+</div>
+
+<!-- Sourced vs Influenced Revenue Chart -->
+<div class="chart-card">
+  <div class="chart-header">
+    <div>
+      <div class="chart-title">Partner Sourced vs. Influenced Revenue</div>
+      <div class="chart-subtitle">Closed Won ARR by close month · sourced = partner lead source · influenced = Partner Influenced ✓ (excl. sourced)</div>
+    </div>
+    <div class="legend-row">
+      <div class="legend-item"><div class="legend-dot" style="background:#6366f1"></div>Sourced</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#06b6d4"></div>Influenced</div>
+    </div>
+  </div>
+  <div class="chart-wrap" style="height:240px"><canvas id="influenceChart"></canvas></div>
 </div>
 
 </div><!-- /sec-overview -->
@@ -1407,9 +1427,73 @@ function initSplitChart() {
 }
 
 // ─────────────────────────────────────────────
+// SOURCED VS INFLUENCED REVENUE CHART
+// ─────────────────────────────────────────────
+function initInfluenceChart() {
+  const existing = Chart.getChart(document.getElementById('influenceChart'));
+  if (existing) existing.destroy();
+  if (!_influenceData.length) return;
+
+  const months = [...new Set(_influenceData.map(r => r.month))].sort();
+  const labels = months.map(monthLabel);
+
+  const sourcedData   = months.map(m => { const r = _influenceData.find(d => d.month === m && d.type === 'sourced');   return r ? +r.arr : 0; });
+  const influencedData = months.map(m => { const r = _influenceData.find(d => d.month === m && d.type === 'influenced'); return r ? +r.arr : 0; });
+
+  new Chart(document.getElementById('influenceChart').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Sourced',
+          data: sourcedData,
+          backgroundColor: 'rgba(99,102,241,0.8)',
+          borderColor: '#6366f1', borderWidth: 1,
+          borderRadius: 0, stack: 'a',
+        },
+        {
+          label: 'Influenced',
+          data: influencedData,
+          backgroundColor: 'rgba(6,182,212,0.8)',
+          borderColor: '#06b6d4', borderWidth: 1,
+          borderRadius: 4, stack: 'a',
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          ...tooltipDefaults(),
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString()}`,
+            footer: items => {
+              const total = items.reduce((s,i) => s + i.parsed.y, 0);
+              return `Total: $${total.toLocaleString()}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { ...scaleDefaults().x, stacked: true },
+        y: { ...scaleDefaults().y, stacked: true, min: 0,
+          ticks: { ...scaleDefaults().y.ticks,
+            callback: v => '$'+(v>=1000?(v/1000).toFixed(0)+'K':v)
+          }
+        }
+      }
+    }
+  });
+}
+
+// ─────────────────────────────────────────────
 // DEAL CLOSE VELOCITY COHORT CHART
 // ─────────────────────────────────────────────
 let _cohortData = [];
+let _influenceData = [];
 let _rilletCohort = [];
 let _rilletTotal = {};
 
@@ -1864,6 +1948,18 @@ function updateKpiCards() {
     document.getElementById('kpi-pct-sub').textContent = ml + ' (MTD)';
   }
 
+  // MTD Partner Influenced % of Rillet Revenue
+  const influencedMtd = _influenceData.find(r => r.month === curMonth && r.type === 'influenced');
+  const influencedArr = influencedMtd ? influencedMtd.arr : 0;
+  if (rilletMtd && rilletMtd.arr > 0) {
+    const ipct = (influencedArr / rilletMtd.arr * 100).toFixed(1);
+    document.getElementById('kpi-influenced-pct').textContent = ipct + '%';
+    document.getElementById('kpi-influenced-pct-sub').textContent = `${ml} (MTD) · ${fmt$(influencedArr)} of ${fmt$(rilletMtd.arr)} Rillet cARR`;
+  } else {
+    document.getElementById('kpi-influenced-pct').textContent = '—';
+    document.getElementById('kpi-influenced-pct-sub').textContent = ml + ' (MTD)';
+  }
+
   // Header timestamp
   const ts = new Date().toLocaleString('en-US', { month:'short', year:'numeric' });
   document.getElementById('header-updated').textContent = 'Updated ' + ts;
@@ -1898,6 +1994,7 @@ async function loadDashboard() {
     _rilletCohort = (data.rilletCohort || []).map(r => ({ cohort_month: r.cohort_month, close_month: r.close_month, deals: +r.deals }));
     _rilletTotal = {};
     (data.rilletTotal || []).forEach(r => { _rilletTotal[r.month] = +r.deals; });
+    _influenceData = (data.influence || []).map(r => ({ month: r.month, type: r.type, deals: +r.deals, arr: +r.arr }));
     _allDeals    = (data.allDeals  || []).map(r => ({
       Id: r.Id, Name: r.Name, StageName: r.StageName, cARR__c: +r.cARR__c, LeadSource: r.LeadSource,
       partner: r.partner, create_month: r.create_month, close_month: r.close_month
@@ -1927,6 +2024,7 @@ async function loadDashboard() {
     initSplitChart();
     initFunnelTable();
     initCohortChart();
+    initInfluenceChart();
     initPipelineAccordion();
     updateKpiCards();
 

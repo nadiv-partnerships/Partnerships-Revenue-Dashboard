@@ -158,6 +158,31 @@ module.exports = async (req, res) => {
          ORDER BY o.[CloseDate], o.[cARR__c] DESC`),
     ]);
 
+    // 11. Sourced vs influenced CW by close month (mutually exclusive)
+    // Wrapped in try/catch so a bad field name doesn't crash the whole endpoint
+    let influenceRec = [];
+    try {
+      const influenceRes = await Q(`
+        SELECT FORMAT(o.[CloseDate],'yyyy-MM') as month,
+               CASE WHEN o.[LeadSource] IN ${PARTNER_SOURCES} THEN 'sourced' ELSE 'influenced' END as type,
+               COUNT(*) as deals,
+               SUM(o.[cARR__c]) as arr
+        FROM [${CONN}].[Salesforce].[Opportunity] o
+        WHERE o.[StageName] = 'Closed Won'
+          AND o.[CloseDate] >= '${START_DATE}'
+          AND o.[CloseDate] >= o.[CreatedDate]
+          AND (
+            o.[LeadSource] IN ${PARTNER_SOURCES}
+            OR o.[Partner_Influenced__c] = 1
+          )
+        GROUP BY FORMAT(o.[CloseDate],'yyyy-MM'),
+                 CASE WHEN o.[LeadSource] IN ${PARTNER_SOURCES} THEN 'sourced' ELSE 'influenced' END
+        ORDER BY month, type`);
+      influenceRec = influenceRes.recordset;
+    } catch (e) {
+      console.warn('influence query failed (Partner_Influenced__c may not exist):', e.message);
+    }
+
     const [rilletCohortRes, rilletTotalRes] = await Promise.all([
 
       // 9. All Rillet CW by cohort+close month → Rillet Overall cohort line
@@ -188,8 +213,9 @@ module.exports = async (req, res) => {
       split:       splitRes.recordset,
       cohort:      cohortRes.recordset,
       allDeals:      allDealsRes.recordset,
-      rilletCohort:  rilletCohortRes.recordset,  // [{cohort_month, close_month, deals}] all Rillet
-      rilletTotal:   rilletTotalRes.recordset,    // [{month, deals}] all Rillet
+      influence:     influenceRec,                   // [{month, type, deals, arr}] sourced|influenced
+      rilletCohort:  rilletCohortRes.recordset,
+      rilletTotal:   rilletTotalRes.recordset,
       generatedAt: new Date().toISOString(),
     });
 
