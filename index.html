@@ -82,7 +82,7 @@
     .toggle-btn:hover:not(.active) { border-color: #334155; color: #94a3b8; }
 
 
-    /* ── Password gate ──────────────────────────── */
+    /* ── Auth gate ──────────────────────────────── */
     #pw-gate {
       position: fixed; inset: 0; z-index: 9999;
       background: #0a0d14;
@@ -151,48 +151,62 @@
 </head>
 <body>
 
-  <!-- Password gate -->
+  <!-- Google Identity Services -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+  <!-- Auth gate -->
   <div id="pw-gate">
     <div class="pw-box">
       <div class="pw-logo">Rillet <span>Partnerships</span></div>
-      <div class="pw-sub">Revenue Dashboard · Partners Only</div>
-      <div class="pw-input-wrap">
-        <input id="pw-input" class="pw-input" type="password"
-               placeholder="Enter password" autocomplete="current-password" />
+      <div class="pw-sub">Revenue Dashboard · Sign in with your Rillet account</div>
+      <div style="margin-top:32px;display:flex;justify-content:center;">
+        <div id="g_id_onload"
+             data-client_id="517219850926-j2ejv599qqnqj8o3gau482fmtadtt174.apps.googleusercontent.com"
+             data-callback="handleGoogleSignIn"
+             data-auto_select="true"
+             data-itp_support="true">
+        </div>
+        <div class="g_id_signin"
+             data-type="standard"
+             data-shape="rectangular"
+             data-theme="filled_black"
+             data-text="signin_with"
+             data-size="large"
+             data-logo_alignment="left">
+        </div>
       </div>
-      <button class="pw-btn" id="pw-submit">Access Dashboard</button>
       <div class="pw-error" id="pw-error"></div>
     </div>
   </div>
   <script>
     (function() {
-      var _k = 'RXZlcnlEYXlJc0RheVplcm8h';
-      function check(val) {
-        try { return atob(_k) === val; } catch(e) { return false; }
-      }
       // Already authenticated this session?
       if (sessionStorage.getItem('rillet_auth') === '1') {
         document.getElementById('pw-gate').classList.add('hidden');
-        return;
       }
-      function attempt() {
-        var v = document.getElementById('pw-input').value;
-        if (check(v)) {
+    })();
+
+    async function handleGoogleSignIn(response) {
+      const errEl = document.getElementById('pw-error');
+      errEl.textContent = '';
+      try {
+        const r = await fetch('/api/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ credential: response.credential }),
+        });
+        const data = await r.json();
+        if (r.ok && data.ok) {
           sessionStorage.setItem('rillet_auth', '1');
+          sessionStorage.setItem('rillet_user', data.email);
           document.getElementById('pw-gate').classList.add('hidden');
         } else {
-          document.getElementById('pw-input').classList.add('error');
-          document.getElementById('pw-error').textContent = 'Incorrect password — try again.';
-          setTimeout(function() {
-            document.getElementById('pw-input').classList.remove('error');
-          }, 1200);
+          errEl.textContent = data.error || 'Access denied.';
         }
+      } catch (e) {
+        errEl.textContent = 'Sign-in failed — please try again.';
       }
-      document.getElementById('pw-submit').addEventListener('click', attempt);
-      document.getElementById('pw-input').addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') attempt();
-      });
-    })();
+    }
   </script>
 
 
