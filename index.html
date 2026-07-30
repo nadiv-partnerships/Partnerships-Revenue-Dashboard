@@ -360,7 +360,7 @@
   <div class="chart-header">
     <div>
       <div class="chart-title">Deal Close Velocity by Cohort</div>
-      <div class="chart-subtitle">Win rate = Closed Won ÷ (Closed Won + Closed Lost) · cumulative by month after origination</div>
+      <div class="chart-subtitle">Cumulative % of deals closed won by month after origination · white line = all cohorts combined</div>
     </div>
     <div id="cohortToggle" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
   </div>
@@ -1416,13 +1416,10 @@ function initCohortChart() {
   if (existing) existing.destroy();
   if (!_cohortData.length || !_allDeals.length) return;
 
-  // Denominator = closed deals only (won + lost) per cohort month
-  // This gives true win rate among deals that reached a decision
+  // Denominator = all deals originated in the month (any stage)
   const totalByMonth = {};
   _allDeals.forEach(d => {
-    if (d.StageName === 'Closed Won' || d.StageName === 'Closed Lost') {
-      totalByMonth[d.create_month] = (totalByMonth[d.create_month] || 0) + 1;
-    }
+    totalByMonth[d.create_month] = (totalByMonth[d.create_month] || 0) + 1;
   });
 
   // CW wins per cohort: { cohort_month: { offset: count } }
@@ -1447,18 +1444,16 @@ function initCohortChart() {
   const today = new Date();
   const curMonth = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0');
 
-  const datasets = cohortMonths.map((m, i) => {
+  const cohortDatasets = cohortMonths.map((m, i) => {
     const total = totalByMonth[m] || 1;
     const wins  = winsByOffset[m] || {};
     const isCurrentMonth = m >= curMonth;
     let cum = 0;
     const data = X_LABELS.map((_, j) => {
       cum += (wins[j] || 0);
-      // Null out future buckets (offset > months elapsed since cohort)
-      const now = new Date();
       const cohortDate = new Date(m + '-01');
-      const elapsed = (now.getFullYear() - cohortDate.getFullYear()) * 12
-                    + (now.getMonth()    - cohortDate.getMonth());
+      const elapsed = (today.getFullYear() - cohortDate.getFullYear()) * 12
+                    + (today.getMonth()    - cohortDate.getMonth());
       if (j > elapsed) return null;
       return +(cum / total * 100).toFixed(1);
     });
@@ -1468,7 +1463,7 @@ function initCohortChart() {
       label, data,
       borderColor: color, backgroundColor: 'transparent',
       borderWidth: 2,
-      hidden: i === 0,  // oldest cohort hidden by default
+      hidden: false,
       ...(isCurrentMonth ? { borderDash: [5,4] } : {}),
       pointBackgroundColor: color, pointBorderColor: '#0a0d14',
       pointBorderWidth: 2,
@@ -1476,6 +1471,43 @@ function initCohortChart() {
       pointHoverRadius: 7, tension: 0.3, spanGaps: false,
     };
   });
+
+  // Partner Overall line: aggregate across all cohorts
+  const overallTotal = Object.values(totalByMonth).reduce((s, v) => s + v, 0);
+  const overallData = X_LABELS.map((_, j) => {
+    // Sum all CW wins at this offset across all cohorts (only cohorts old enough to have reached offset j)
+    let cumWins = 0;
+    let eligibleTotal = 0;
+    cohortMonths.forEach(m => {
+      const cohortDate = new Date(m + '-01');
+      const elapsed = (today.getFullYear() - cohortDate.getFullYear()) * 12
+                    + (today.getMonth()    - cohortDate.getMonth());
+      if (elapsed < j) return; // cohort hasn't had time to reach this offset yet
+      eligibleTotal += (totalByMonth[m] || 0);
+      const wins = winsByOffset[m] || {};
+      for (let k = 0; k <= j; k++) cumWins += (wins[k] || 0);
+    });
+    if (eligibleTotal === 0) return null;
+    return +(cumWins / eligibleTotal * 100).toFixed(1);
+  });
+
+  const overallDataset = {
+    label: 'Partner Overall',
+    data: overallData,
+    borderColor: '#ffffff',
+    backgroundColor: 'transparent',
+    borderWidth: 2.5,
+    borderDash: [],
+    hidden: false,
+    pointBackgroundColor: '#ffffff',
+    pointBorderColor: '#0a0d14',
+    pointBorderWidth: 2,
+    pointRadius: overallData.map(v => v !== null ? 5 : 0),
+    pointHoverRadius: 7, tension: 0.3, spanGaps: false,
+    order: -1, // draw on top
+  };
+
+  const datasets = [...cohortDatasets, overallDataset];
 
   const cohortChart = new Chart(document.getElementById('cohortChart').getContext('2d'), {
     type: 'line',
@@ -1505,6 +1537,9 @@ function initCohortChart() {
     btn.className = 'toggle-btn' + (ds.hidden ? '' : ' active');
     btn.textContent = ds.label;
     btn.style.borderColor = ds.borderColor;
+    if (ds.label === 'Partner Overall') {
+      btn.style.fontWeight = '700';
+    }
     btn.addEventListener('click', () => {
       const meta = cohortChart.getDatasetMeta(i);
       meta.hidden = !meta.hidden;

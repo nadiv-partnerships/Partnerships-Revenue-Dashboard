@@ -79,7 +79,7 @@ module.exports = async (req, res) => {
          GROUP BY FORMAT([CloseDate],'yyyy-MM')
          ORDER BY month`),
 
-      // 3. All opps by CREATE month  →  pipeline sourced area chart (matches SF report: IS NOT NULL)
+      // 3. All opps by CREATE month  →  pipeline sourced area chart (all stages, matches SF report)
       Q(`SELECT FORMAT(o.[CreatedDate],'yyyy-MM') as month,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as cnt
