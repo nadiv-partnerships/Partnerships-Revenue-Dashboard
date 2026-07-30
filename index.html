@@ -134,7 +134,9 @@
       display: flex; gap: 0; padding: 0 2px;
       margin: 0 -32px 28px; /* bleed to body edges */
       padding-left: 32px;
+      overflow-x: auto; scrollbar-width: none;
     }
+    .tab-nav::-webkit-scrollbar { display: none; }
     .tab-btn {
       background: transparent; border: none; border-bottom: 2px solid transparent;
       color: #475569; font-size: 12px; font-weight: 600; letter-spacing: 0.2px;
@@ -223,10 +225,16 @@
 
 <!-- Tab Nav -->
 <nav class="tab-nav" id="dashTabs">
-  <button class="tab-btn active" data-target="sec-overview">Revenue &amp; Overview</button>
-  <button class="tab-btn" data-target="sec-pipeline">Pipeline Generation</button>
-  <button class="tab-btn" data-target="sec-performance">Detailed Performance</button>
-  <button class="tab-btn" data-target="sec-partners">Partners</button>
+  <button class="tab-btn active" data-target="sec-cw">Closed Won</button>
+  <button class="tab-btn" data-target="sec-pipeline-chart">Pipeline</button>
+  <button class="tab-btn" data-target="sec-avg-deal">Avg Deal Size</button>
+  <button class="tab-btn" data-target="sec-pct">% of Rillet</button>
+  <button class="tab-btn" data-target="sec-influence">Sourced vs Influenced</button>
+  <button class="tab-btn" data-target="sec-referrals">Referrals</button>
+  <button class="tab-btn" data-target="sec-velocity">Deal Velocity</button>
+  <button class="tab-btn" data-target="sec-pipeline">Funnel</button>
+  <button class="tab-btn" data-target="sec-performance">Inbound/Resell</button>
+  <button class="tab-btn" data-target="sec-partners">Leaderboard</button>
   <button class="tab-btn" data-target="sec-deals">Deal Detail</button>
 </nav>
 
@@ -261,7 +269,7 @@
 </div>
 
 <!-- Line Chart + Partner Type Table -->
-<div style="display:grid;grid-template-columns:1fr 340px;gap:16px;margin-bottom:24px;">
+<div id="sec-cw" style="display:grid;grid-template-columns:1fr 340px;gap:16px;margin-bottom:24px;scroll-margin-top:58px;">
 
   <div class="chart-card" style="margin-bottom:0">
     <div class="chart-header">
@@ -294,7 +302,7 @@
 </div>
 
 <!-- Pipeline Origination -->
-<div style="display:grid;grid-template-columns:1fr 340px;gap:16px;margin-bottom:24px;">
+<div id="sec-pipeline-chart" style="display:grid;grid-template-columns:1fr 340px;gap:16px;margin-bottom:24px;scroll-margin-top:58px;">
 
   <div class="chart-card" style="margin-bottom:0">
     <div class="chart-header">
@@ -327,7 +335,7 @@
 </div>
 
 <!-- Avg cARR per Deal: Partner vs Rillet -->
-<div class="chart-card">
+<div id="sec-avg-deal" class="chart-card" style="scroll-margin-top:58px;">
   <div class="chart-header">
     <div>
       <div class="chart-title">Avg cARR per Deal — Partner vs. Rillet</div>
@@ -342,7 +350,7 @@
 </div>
 
 <!-- Partner Revenue % of Rillet Revenue -->
-<div class="chart-card">
+<div id="sec-pct" class="chart-card" style="scroll-margin-top:58px;">
   <div class="chart-header">
     <div>
       <div class="chart-title">Partner Revenue as % of Rillet Revenue</div>
@@ -353,7 +361,7 @@
 </div>
 
 <!-- Sourced vs Influenced Revenue Chart -->
-<div class="chart-card">
+<div id="sec-influence" class="chart-card" style="scroll-margin-top:58px;">
   <div class="chart-header">
     <div>
       <div class="chart-title">Partner Sourced vs. Influenced Revenue</div>
@@ -369,7 +377,7 @@
 </div>
 
 <!-- Partner Referral Activity -->
-<div class="chart-card">
+<div id="sec-referrals" class="chart-card" style="scroll-margin-top:58px;">
   <div class="chart-header">
     <div>
       <div class="chart-title"># of Partners Sending Referrals</div>
@@ -380,7 +388,7 @@
 </div>
 
 <!-- Deal Close Velocity Cohort Chart -->
-<div class="chart-card">
+<div id="sec-velocity" class="chart-card" style="scroll-margin-top:58px;">
   <div class="chart-header">
     <div>
       <div class="chart-title">Deal Close Velocity by Cohort</div>
@@ -2049,7 +2057,11 @@ function initPipelineAccordion() {
 // ─────────────────────────────────────────────
 (function() {
   const tabs  = document.querySelectorAll('#dashTabs .tab-btn');
-  const secs  = ['sec-overview','sec-pipeline','sec-performance','sec-partners','sec-deals'];
+  const secs  = [
+    'sec-cw','sec-pipeline-chart','sec-avg-deal','sec-pct',
+    'sec-influence','sec-referrals','sec-velocity',
+    'sec-pipeline','sec-performance','sec-partners','sec-deals'
+  ];
   const NAV_H = 50;
 
   // Click: smooth scroll + immediate active state
