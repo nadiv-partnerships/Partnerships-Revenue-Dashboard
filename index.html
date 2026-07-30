@@ -1305,7 +1305,7 @@ let splitActiveKey = 'deals';
 
   const chart = new Chart(document.getElementById('splitChart').getContext('2d'), {
     type: 'bar',
-    data: { labels: MONTH_LABELS, datasets: buildDatasets('deals') },
+    data: { labels: ["Jan '26","Feb '26","Mar '26","Apr '26","May '26","Jun '26"], datasets: buildDatasets('deals') },
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode:'index', intersect:false },
