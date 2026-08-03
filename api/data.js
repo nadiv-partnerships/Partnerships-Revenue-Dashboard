@@ -190,10 +190,12 @@ module.exports = async (req, res) => {
       // 9. All Rillet CW by cohort+close month → Rillet Overall cohort line
       Q(`SELECT FORMAT([CreatedDate],'yyyy-MM') as cohort_month,
                 FORMAT([CloseDate],'yyyy-MM') as close_month,
-                COUNT(*) as deals
+                COUNT(*) as deals,
+                SUM([cARR__c]) as arr
          FROM [${CONN}].[Salesforce].[Opportunity]
          WHERE [StageName] = 'Closed Won'
            AND [CreatedDate] >= '${START_DATE}'
+           AND [CloseDate] >= [CreatedDate]
          GROUP BY FORMAT([CreatedDate],'yyyy-MM'), FORMAT([CloseDate],'yyyy-MM')
          ORDER BY cohort_month, close_month`),
 
