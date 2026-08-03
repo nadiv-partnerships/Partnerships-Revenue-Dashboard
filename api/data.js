@@ -134,10 +134,11 @@ module.exports = async (req, res) => {
                   CASE WHEN o.[LeadSource] = 'Partner - Resell' THEN 'resell' ELSE 'inbound' END
          ORDER BY month`),
 
-      // 7. CW by cohort month + close month → cohort velocity chart
+      // 7. CW by cohort month + close month → revenue by origination lag chart
       Q(`SELECT FORMAT(o.[CreatedDate],'yyyy-MM') as cohort_month,
                 FORMAT(o.[CloseDate],'yyyy-MM') as close_month,
-                COUNT(*) as deals
+                COUNT(*) as deals,
+                SUM(o.[cARR__c]) as arr
          FROM [${CONN}].[Salesforce].[Opportunity] o
          WHERE o.[StageName] = 'Closed Won'
            AND o.[LeadSource] IN ${PARTNER_SOURCES}

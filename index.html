@@ -391,8 +391,8 @@
 <div id="sec-velocity" class="chart-card" style="scroll-margin-top:58px;">
   <div class="chart-header">
     <div>
-      <div class="chart-title">Deal Close Velocity by Cohort</div>
-      <div class="chart-subtitle">Cumulative % of deals closed won by month after origination · white = partner overall · grey = Rillet overall</div>
+      <div class="chart-title">Revenue by Origination Lag</div>
+      <div class="chart-subtitle">% of partner closed won ARR per close month, by how long ago the opp was created</div>
     </div>
     <div id="cohortToggle" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
   </div>
@@ -1677,7 +1677,7 @@ function initInfluenceChart() {
 }
 
 // ─────────────────────────────────────────────
-// DEAL CLOSE VELOCITY COHORT CHART
+// REVENUE BY ORIGINATION LAG CHART
 // ─────────────────────────────────────────────
 let _cohortData = [];
 let _influenceData = [];
@@ -1687,179 +1687,80 @@ let _rilletTotal = {};
 function initCohortChart() {
   const existing = Chart.getChart(document.getElementById('cohortChart'));
   if (existing) existing.destroy();
-  if (!_cohortData.length || !_allDeals.length) return;
+  if (!_cohortData.length) return;
 
-  // Denominator = all deals originated in the month (any stage)
-  const totalByMonth = {};
-  _allDeals.forEach(d => {
-    totalByMonth[d.create_month] = (totalByMonth[d.create_month] || 0) + 1;
-  });
-
-  // CW wins per cohort: { cohort_month: { offset: count } }
-  const winsByOffset = {};
+  // For each close month, bucket ARR by origination lag (capped at M+4+)
+  const byCloseLag = {}; // { close_month: { 0: arr, 1: arr, 2: arr, 3: arr, 4: arr } }
   _cohortData.forEach(r => {
-    if (!winsByOffset[r.cohort_month]) winsByOffset[r.cohort_month] = {};
     const cohortDate = new Date(r.cohort_month + '-01');
     const closeDate  = new Date(r.close_month  + '-01');
     const offset = (closeDate.getFullYear() - cohortDate.getFullYear()) * 12
                  + (closeDate.getMonth()    - cohortDate.getMonth());
-    winsByOffset[r.cohort_month][offset] = (winsByOffset[r.cohort_month][offset] || 0) + +r.deals;
+    const lag = Math.min(offset, 4);
+    if (!byCloseLag[r.close_month]) byCloseLag[r.close_month] = {};
+    byCloseLag[r.close_month][lag] = (byCloseLag[r.close_month][lag] || 0) + r.arr;
   });
 
-  const cohortMonths = Object.keys(totalByMonth).sort();
-  const maxOffset = Math.max(...cohortMonths.map(m =>
-    Object.keys(winsByOffset[m] || {}).map(Number)
-  ).flat().concat([2]));
+  const closeMonths = Object.keys(byCloseLag).sort();
+  const labels = closeMonths.map(monthLabel);
 
-  const X_LABELS = ['Same Month', ...Array.from({length: maxOffset}, (_,i) => `+${i+1} Month${i>0?'s':''}`)];
-  const COHORT_COLORS = ['#6366f1','#06b6d4','#10b981','#f59e0b','#ec4899','#f97316','#a855f7'];
+  const LAG_LABELS  = ['Same month', 'M+1', 'M+2', 'M+3', 'M+4+'];
+  const LAG_COLORS  = [
+    'rgba(99,102,241,0.85)',
+    'rgba(34,211,238,0.85)',
+    'rgba(251,191,36,0.85)',
+    'rgba(74,222,128,0.85)',
+    'rgba(248,113,113,0.85)',
+  ];
 
-  const today = new Date();
-  const curMonth = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0');
+  const datasets = LAG_LABELS.map((label, i) => ({
+    label,
+    data: closeMonths.map(m => {
+      const total = Object.values(byCloseLag[m]).reduce((s, v) => s + v, 0);
+      if (!total) return 0;
+      return +((byCloseLag[m][i] || 0) / total * 100).toFixed(1);
+    }),
+    backgroundColor: LAG_COLORS[i],
+    borderWidth: 0,
+    borderRadius: 2,
+  }));
 
-  const cohortDatasets = cohortMonths.map((m, i) => {
-    const total = totalByMonth[m] || 1;
-    const wins  = winsByOffset[m] || {};
-    const isCurrentMonth = m >= curMonth;
-    let cum = 0;
-    const data = X_LABELS.map((_, j) => {
-      cum += (wins[j] || 0);
-      const cohortDate = new Date(m + '-01');
-      const elapsed = (today.getFullYear() - cohortDate.getFullYear()) * 12
-                    + (today.getMonth()    - cohortDate.getMonth());
-      if (j > elapsed) return null;
-      return +(cum / total * 100).toFixed(1);
-    });
-    const label = monthLabel(m);
-    const color = COHORT_COLORS[i % COHORT_COLORS.length];
-    return {
-      label, data,
-      borderColor: color, backgroundColor: 'transparent',
-      borderWidth: 2,
-      hidden: i === 0,  // Jan hidden by default
-      ...(isCurrentMonth ? { borderDash: [5,4] } : {}),
-      pointBackgroundColor: color, pointBorderColor: '#0a0d14',
-      pointBorderWidth: 2,
-      pointRadius: data.map(v => v !== null ? 5 : 0),
-      pointHoverRadius: 7, tension: 0.3, spanGaps: false,
-    };
-  });
-
-  // Partner Overall line: aggregate across all cohorts
-  const overallTotal = Object.values(totalByMonth).reduce((s, v) => s + v, 0);
-  const overallData = X_LABELS.map((_, j) => {
-    // Sum all CW wins at this offset across all cohorts (only cohorts old enough to have reached offset j)
-    let cumWins = 0;
-    let eligibleTotal = 0;
-    cohortMonths.forEach(m => {
-      const cohortDate = new Date(m + '-01');
-      const elapsed = (today.getFullYear() - cohortDate.getFullYear()) * 12
-                    + (today.getMonth()    - cohortDate.getMonth());
-      if (elapsed < j) return; // cohort hasn't had time to reach this offset yet
-      eligibleTotal += (totalByMonth[m] || 0);
-      const wins = winsByOffset[m] || {};
-      for (let k = 0; k <= j; k++) cumWins += (wins[k] || 0);
-    });
-    if (eligibleTotal === 0) return null;
-    return +(cumWins / eligibleTotal * 100).toFixed(1);
-  });
-
-  const overallDataset = {
-    label: 'Partner Overall',
-    data: overallData,
-    borderColor: '#ffffff',
-    backgroundColor: 'transparent',
-    borderWidth: 2.5,
-    hidden: false,
-    pointBackgroundColor: '#ffffff', pointBorderColor: '#0a0d14',
-    pointBorderWidth: 2,
-    pointRadius: overallData.map(v => v !== null ? 5 : 0),
-    pointHoverRadius: 7, tension: 0.3, spanGaps: false,
-    order: -1,
-  };
-
-  // Rillet Overall: blended win rate across ALL Rillet deals (benchmark comparison)
-  const rilletWinsByOffset = {};
-  _rilletCohort.forEach(r => {
-    const cohortDate = new Date(r.cohort_month + '-01');
-    const closeDate  = new Date(r.close_month  + '-01');
-    const offset = (closeDate.getFullYear() - cohortDate.getFullYear()) * 12
-                 + (closeDate.getMonth()    - cohortDate.getMonth());
-    if (!rilletWinsByOffset[r.cohort_month]) rilletWinsByOffset[r.cohort_month] = {};
-    rilletWinsByOffset[r.cohort_month][offset] = (rilletWinsByOffset[r.cohort_month][offset] || 0) + +r.deals;
-  });
-  const rilletMonths = Object.keys(_rilletTotal).sort();
-  const rilletOverallData = X_LABELS.map((_, j) => {
-    let cumWins = 0, eligibleTotal = 0;
-    rilletMonths.forEach(m => {
-      const cohortDate = new Date(m + '-01');
-      const elapsed = (today.getFullYear() - cohortDate.getFullYear()) * 12
-                    + (today.getMonth()    - cohortDate.getMonth());
-      if (elapsed < j) return;
-      eligibleTotal += (_rilletTotal[m] || 0);
-      const wins = rilletWinsByOffset[m] || {};
-      for (let k = 0; k <= j; k++) cumWins += (wins[k] || 0);
-    });
-    if (eligibleTotal === 0) return null;
-    return +(cumWins / eligibleTotal * 100).toFixed(1);
-  });
-
-  const rilletOverallDataset = {
-    label: 'Rillet Overall',
-    data: rilletOverallData,
-    borderColor: '#94a3b8',
-    backgroundColor: 'transparent',
-    borderWidth: 2,
-    borderDash: [4, 3],
-    hidden: false,
-    pointBackgroundColor: '#94a3b8', pointBorderColor: '#0a0d14',
-    pointBorderWidth: 2,
-    pointRadius: rilletOverallData.map(v => v !== null ? 4 : 0),
-    pointHoverRadius: 6, tension: 0.3, spanGaps: false,
-    order: -1,
-  };
-
-  const datasets = [...cohortDatasets, overallDataset, rilletOverallDataset];
-
-  const cohortChart = new Chart(document.getElementById('cohortChart').getContext('2d'), {
-    type: 'line',
-    data: { labels: X_LABELS, datasets },
+  new Chart(document.getElementById('cohortChart').getContext('2d'), {
+    type: 'bar',
+    data: { labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
-      interaction: { mode:'index', intersect:false },
+      interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: false },
+        legend: {
+          display: true, position: 'top',
+          labels: { color: '#94a3b8', font: { size: 11 }, boxWidth: 12, padding: 16 }
+        },
         tooltip: {
           ...tooltipDefaults(),
-          callbacks: { label: ctx => ctx.parsed.y != null ? ` ${ctx.dataset.label}: ${ctx.parsed.y}%` : null }
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y}%`
+          }
         }
       },
       scales: {
-        ...scaleDefaults(),
-        y: { ...scaleDefaults().y, min:0, ticks:{ ...scaleDefaults().y.ticks, callback: v => v+'%' } }
+        x: {
+          stacked: true,
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: { color: '#64748b', font: { size: 11 } }
+        },
+        y: {
+          stacked: true,
+          min: 0, max: 100,
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: { color: '#64748b', font: { size: 11 }, callback: v => v + '%' }
+        }
       }
     }
   });
 
-  // Build toggle buttons
-  const toggleEl = document.getElementById('cohortToggle');
-  toggleEl.innerHTML = '';
-  datasets.forEach((ds, i) => {
-    const btn = document.createElement('button');
-    btn.className = 'toggle-btn' + (ds.hidden ? '' : ' active');
-    btn.textContent = ds.label;
-    btn.style.borderColor = ds.borderColor;
-    if (ds.label === 'Partner Overall') {
-      btn.style.fontWeight = '700';
-    }
-    btn.addEventListener('click', () => {
-      const meta = cohortChart.getDatasetMeta(i);
-      meta.hidden = !meta.hidden;
-      btn.classList.toggle('active', !meta.hidden);
-      cohortChart.update();
-    });
-    toggleEl.appendChild(btn);
-  });
+  // Clear old toggle buttons — legend handles it now
+  document.getElementById('cohortToggle').innerHTML = '';
 }
 
 // ─────────────────────────────────────────────
@@ -2181,7 +2082,7 @@ async function loadDashboard() {
 
     // Populate new data vars
     _splitData   = (data.split     || []).map(r => ({ month: r.month, type: r.type, deals: +r.deals, arr: +r.arr }));
-    _cohortData  = (data.cohort    || []).map(r => ({ cohort_month: r.cohort_month, close_month: r.close_month, deals: +r.deals }));
+    _cohortData  = (data.cohort    || []).map(r => ({ cohort_month: r.cohort_month, close_month: r.close_month, deals: +r.deals, arr: +(r.arr||0) }));
     _rilletCohort = (data.rilletCohort || []).map(r => ({ cohort_month: r.cohort_month, close_month: r.close_month, deals: +r.deals }));
     _rilletTotal = {};
     (data.rilletTotal || []).forEach(r => { _rilletTotal[r.month] = +r.deals; });
