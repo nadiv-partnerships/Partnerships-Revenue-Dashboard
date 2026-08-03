@@ -392,7 +392,7 @@
   <div class="chart-header">
     <div>
       <div class="chart-title">Revenue by Origination Lag</div>
-      <div class="chart-subtitle">Cumulative % of cohort ARR closed by month after origination · white = partner overall · grey = Rillet overall</div>
+      <div class="chart-subtitle">% of closed ARR from opps created same month vs M+1, M+2… · toggle months to compare</div>
     </div>
     <div id="cohortToggle" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
   </div>
@@ -1689,141 +1689,113 @@ function initCohortChart() {
   if (existing) existing.destroy();
   if (!_cohortData.length) return;
 
-  // Build ARR by offset per cohort month
-  // Denominator = total closed ARR from that cohort (sum across all offsets)
-  const arrByOffset = {}; // { cohort_month: { offset: arr } }
+  const MAX_LAG = 4;
+  const X_LABELS = ['Same Month', 'M+1', 'M+2', 'M+3', 'M+4+'];
+
+  // byCloseLag[close_month][lag] = arr
+  const byCloseLag = {};
   _cohortData.forEach(r => {
     const cohortDate = new Date(r.cohort_month + '-01');
     const closeDate  = new Date(r.close_month  + '-01');
     const offset = (closeDate.getFullYear() - cohortDate.getFullYear()) * 12
-                 + (closeDate.getMonth()    - cohortDate.getMonth());
-    if (!arrByOffset[r.cohort_month]) arrByOffset[r.cohort_month] = {};
-    arrByOffset[r.cohort_month][offset] = (arrByOffset[r.cohort_month][offset] || 0) + r.arr;
+                 + (closeDate.getMonth() - cohortDate.getMonth());
+    if (offset < 0) return;
+    const lag = Math.min(offset, MAX_LAG);
+    if (!byCloseLag[r.close_month]) byCloseLag[r.close_month] = {};
+    byCloseLag[r.close_month][lag] = (byCloseLag[r.close_month][lag] || 0) + r.arr;
   });
 
-  const cohortMonths = Object.keys(arrByOffset).sort();
-  const maxOffset = Math.max(...cohortMonths.map(m =>
-    Object.keys(arrByOffset[m]).map(Number)
-  ).flat().concat([2]));
-
-  const X_LABELS = ['Same Month', ...Array.from({length: maxOffset}, (_,i) => `+${i+1} Month${i>0?'s':''}`)];
-  const COHORT_COLORS = ['#6366f1','#06b6d4','#10b981','#f59e0b','#ec4899','#f97316','#a855f7'];
-
-  const today = new Date();
-  const curMonth = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0');
-
-  const cohortDatasets = cohortMonths.map((m, i) => {
-    const totalArr = Object.values(arrByOffset[m]).reduce((s, v) => s + v, 0) || 1;
-    const offsets  = arrByOffset[m];
-    const isCurrentMonth = m >= curMonth;
-    let cum = 0;
-    const data = X_LABELS.map((_, j) => {
-      cum += (offsets[j] || 0);
-      const cohortDate = new Date(m + '-01');
-      const elapsed = (today.getFullYear() - cohortDate.getFullYear()) * 12
-                    + (today.getMonth()    - cohortDate.getMonth());
-      if (j > elapsed) return null;
-      return +(cum / totalArr * 100).toFixed(1);
+  // Partner Overall: non-cumulative % across all close months combined
+  const partnerTotByLag = {}, partnerGrand = { v: 0 };
+  Object.values(byCloseLag).forEach(lagMap => {
+    Object.entries(lagMap).forEach(([lag, arr]) => {
+      partnerTotByLag[+lag] = (partnerTotByLag[+lag] || 0) + arr;
+      partnerGrand.v += arr;
     });
-    const label = monthLabel(m);
-    const color = COHORT_COLORS[i % COHORT_COLORS.length];
-    return {
-      label, data,
-      borderColor: color, backgroundColor: 'transparent',
-      borderWidth: 2,
-      hidden: i === 0,
-      ...(isCurrentMonth ? { borderDash: [5,4] } : {}),
-      pointBackgroundColor: color, pointBorderColor: '#0a0d14',
-      pointBorderWidth: 2,
-      pointRadius: data.map(v => v !== null ? 5 : 0),
-      pointHoverRadius: 7, tension: 0.3, spanGaps: false,
-    };
   });
+  const partnerPct = X_LABELS.map((_, i) =>
+    partnerGrand.v ? +((partnerTotByLag[i] || 0) / partnerGrand.v * 100).toFixed(1) : 0
+  );
 
-  // Partner Overall: blended ARR-weighted across all cohorts
-  const overallData = X_LABELS.map((_, j) => {
-    let cumArr = 0, eligibleTotal = 0;
-    cohortMonths.forEach(m => {
-      const cohortDate = new Date(m + '-01');
-      const elapsed = (today.getFullYear() - cohortDate.getFullYear()) * 12
-                    + (today.getMonth()    - cohortDate.getMonth());
-      if (elapsed < j) return;
-      const totalArr = Object.values(arrByOffset[m]).reduce((s, v) => s + v, 0);
-      eligibleTotal += totalArr;
-      const offsets = arrByOffset[m];
-      for (let k = 0; k <= j; k++) cumArr += (offsets[k] || 0);
-    });
-    if (!eligibleTotal) return null;
-    return +(cumArr / eligibleTotal * 100).toFixed(1);
-  });
-
-  const overallDataset = {
-    label: 'Partner Overall',
-    data: overallData,
-    borderColor: '#ffffff', backgroundColor: 'transparent',
-    borderWidth: 2.5, hidden: false,
-    pointBackgroundColor: '#ffffff', pointBorderColor: '#0a0d14',
-    pointBorderWidth: 2,
-    pointRadius: overallData.map(v => v !== null ? 5 : 0),
-    pointHoverRadius: 7, tension: 0.3, spanGaps: false, order: -1,
-  };
-
-  // Rillet Overall: ARR-weighted across all Rillet cohorts
-  const rilletArrByOffset = {};
+  // Rillet Overall
+  const rilletTotByLag = {}, rilletGrand = { v: 0 };
   _rilletCohort.forEach(r => {
     const cohortDate = new Date(r.cohort_month + '-01');
     const closeDate  = new Date(r.close_month  + '-01');
     const offset = (closeDate.getFullYear() - cohortDate.getFullYear()) * 12
-                 + (closeDate.getMonth()    - cohortDate.getMonth());
-    if (!rilletArrByOffset[r.cohort_month]) rilletArrByOffset[r.cohort_month] = {};
-    rilletArrByOffset[r.cohort_month][offset] = (rilletArrByOffset[r.cohort_month][offset] || 0) + r.arr;
+                 + (closeDate.getMonth() - cohortDate.getMonth());
+    if (offset < 0) return;
+    const lag = Math.min(offset, MAX_LAG);
+    rilletTotByLag[lag] = (rilletTotByLag[lag] || 0) + r.arr;
+    rilletGrand.v += r.arr;
   });
-  const rilletMonths = Object.keys(rilletArrByOffset).sort();
-  const rilletOverallData = X_LABELS.map((_, j) => {
-    let cumArr = 0, eligibleTotal = 0;
-    rilletMonths.forEach(m => {
-      const cohortDate = new Date(m + '-01');
-      const elapsed = (today.getFullYear() - cohortDate.getFullYear()) * 12
-                    + (today.getMonth()    - cohortDate.getMonth());
-      if (elapsed < j) return;
-      const totalArr = Object.values(rilletArrByOffset[m]).reduce((s, v) => s + v, 0);
-      eligibleTotal += totalArr;
-      const offsets = rilletArrByOffset[m];
-      for (let k = 0; k <= j; k++) cumArr += (offsets[k] || 0);
-    });
-    if (!eligibleTotal) return null;
-    return +(cumArr / eligibleTotal * 100).toFixed(1);
+  const rilletPct = X_LABELS.map((_, i) =>
+    rilletGrand.v ? +((rilletTotByLag[i] || 0) / rilletGrand.v * 100).toFixed(1) : 0
+  );
+
+  // Individual close months
+  const closeMonths = Object.keys(byCloseLag).sort();
+  const MONTH_COLORS = [
+    ['rgba(99,102,241,0.75)',  '#6366f1'],
+    ['rgba(6,182,212,0.75)',   '#06b6d4'],
+    ['rgba(16,185,129,0.75)',  '#10b981'],
+    ['rgba(245,158,11,0.75)',  '#f59e0b'],
+    ['rgba(236,72,153,0.75)',  '#ec4899'],
+    ['rgba(249,115,22,0.75)',  '#f97316'],
+    ['rgba(168,85,247,0.75)',  '#a855f7'],
+  ];
+
+  const monthDatasets = closeMonths.map((m, i) => {
+    const lagMap = byCloseLag[m];
+    const total = Object.values(lagMap).reduce((s, v) => s + v, 0) || 1;
+    const [bg, border] = MONTH_COLORS[i % MONTH_COLORS.length];
+    return {
+      label: monthLabel(m),
+      data: X_LABELS.map((_, j) => +((lagMap[j] || 0) / total * 100).toFixed(1)),
+      backgroundColor: bg, borderColor: border, borderWidth: 1,
+      hidden: true,
+    };
   });
 
-  const rilletOverallDataset = {
-    label: 'Rillet Overall',
-    data: rilletOverallData,
-    borderColor: '#94a3b8', backgroundColor: 'transparent',
-    borderWidth: 2, borderDash: [4,3], hidden: false,
-    pointBackgroundColor: '#94a3b8', pointBorderColor: '#0a0d14',
-    pointBorderWidth: 2,
-    pointRadius: rilletOverallData.map(v => v !== null ? 4 : 0),
-    pointHoverRadius: 6, tension: 0.3, spanGaps: false, order: -1,
-  };
-
-  const datasets = [...cohortDatasets, overallDataset, rilletOverallDataset];
+  const datasets = [
+    {
+      label: 'Partner Overall',
+      data: partnerPct,
+      backgroundColor: 'rgba(255,255,255,0.75)', borderColor: '#ffffff', borderWidth: 1,
+      hidden: false,
+    },
+    {
+      label: 'Rillet Overall',
+      data: rilletPct,
+      backgroundColor: 'rgba(148,163,184,0.5)', borderColor: '#94a3b8', borderWidth: 1,
+      hidden: false,
+    },
+    ...monthDatasets,
+  ];
 
   const cohortChart = new Chart(document.getElementById('cohortChart').getContext('2d'), {
-    type: 'line',
+    type: 'bar',
     data: { labels: X_LABELS, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
-      interaction: { mode:'index', intersect:false },
+      interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: false },
         tooltip: {
           ...tooltipDefaults(),
-          callbacks: { label: ctx => ctx.parsed.y != null ? ` ${ctx.dataset.label}: ${ctx.parsed.y}%` : null }
+          callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y}%` }
         }
       },
       scales: {
-        ...scaleDefaults(),
-        y: { ...scaleDefaults().y, min:0, ticks:{ ...scaleDefaults().y.ticks, callback: v => v+'%' } }
+        x: {
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: { color: '#64748b', font: { size: 11 } }
+        },
+        y: {
+          min: 0,
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: { color: '#64748b', font: { size: 11 }, callback: v => v + '%' }
+        }
       }
     }
   });
