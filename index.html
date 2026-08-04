@@ -31,25 +31,25 @@
     }
     @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
 
-    .kpi-group { margin-bottom: 20px; }
+    .kpi-group { margin-bottom: 12px; }
     .kpi-group-label {
       font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
-      color: #475569; margin-bottom: 8px; padding-left: 2px;
+      color: #475569; margin-bottom: 6px; padding-left: 2px;
     }
     .kpi-row {
-      display: grid; grid-template-columns: repeat(4,1fr); gap: 16px;
+      display: grid; grid-template-columns: repeat(4,1fr); gap: 10px;
     }
     .kpi-card {
-      background: #111827; border: 1px solid #1e293b; border-radius: 14px;
-      padding: 20px 22px; position: relative; overflow: hidden;
+      background: #111827; border: 1px solid #1e293b; border-radius: 10px;
+      padding: 12px 16px; position: relative; overflow: hidden;
     }
     .kpi-card::before {
       content: ''; position: absolute; top:0; left:0; right:0; height: 2px;
       background: var(--accent);
     }
-    .kpi-card .label { font-size:11px; font-weight:600; letter-spacing:0.6px; text-transform:uppercase; color:#64748b; margin-bottom:10px; }
-    .kpi-card .value { font-size:28px; font-weight:800; letter-spacing:-1px; color:#f1f5f9; line-height:1; }
-    .kpi-card .sub   { font-size:12px; color:#475569; margin-top:6px; }
+    .kpi-card .label { font-size:10px; font-weight:600; letter-spacing:0.6px; text-transform:uppercase; color:#64748b; margin-bottom:6px; }
+    .kpi-card .value { font-size:20px; font-weight:800; letter-spacing:-0.5px; color:#f1f5f9; line-height:1; }
+    .kpi-card .sub   { font-size:11px; color:#475569; margin-top:4px; }
 
     .chart-card {
       background: #111827; border: 1px solid #1e293b; border-radius: 16px;
