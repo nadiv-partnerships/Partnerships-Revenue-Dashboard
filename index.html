@@ -31,8 +31,13 @@
     }
     @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
 
+    .kpi-group { margin-bottom: 20px; }
+    .kpi-group-label {
+      font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+      color: #475569; margin-bottom: 8px; padding-left: 2px;
+    }
     .kpi-row {
-      display: grid; grid-template-columns: repeat(5,1fr); gap: 16px; margin-bottom: 24px;
+      display: grid; grid-template-columns: repeat(4,1fr); gap: 16px;
     }
     .kpi-card {
       background: #111827; border: 1px solid #1e293b; border-radius: 14px;
@@ -238,33 +243,58 @@
   <button class="tab-btn" data-target="sec-deals">Deal Detail</button>
 </nav>
 
-<!-- KPI Row -->
+<!-- KPI Rows -->
 <div id="sec-overview" class="dash-section">
-<div class="kpi-row">
-  <div class="kpi-card" style="--accent:linear-gradient(90deg,#6366f1,#8b5cf6)">
-    <div class="label">Revenue MTD</div>
-    <div class="value" id="kpi-rev-mtd">$—</div>
-    <div class="sub" id="kpi-rev-mtd-sub">Loading…</div>
+
+<div class="kpi-group">
+  <div class="kpi-group-label">Month to Date</div>
+  <div class="kpi-row">
+    <div class="kpi-card" style="--accent:linear-gradient(90deg,#6366f1,#8b5cf6)">
+      <div class="label">Partner Revenue</div>
+      <div class="value" id="kpi-rev-mtd">$—</div>
+      <div class="sub" id="kpi-rev-mtd-sub">Loading…</div>
+    </div>
+    <div class="kpi-card" style="--accent:linear-gradient(90deg,#f59e0b,#f97316)">
+      <div class="label">New Pipeline</div>
+      <div class="value" id="kpi-pl-mtd">$—</div>
+      <div class="sub" id="kpi-pl-mtd-sub">Loading…</div>
+    </div>
+    <div class="kpi-card" style="--accent:linear-gradient(90deg,#06b6d4,#6366f1)">
+      <div class="label">Sourced % of Rillet Revenue</div>
+      <div class="value" id="kpi-pct">—%</div>
+      <div class="sub" id="kpi-pct-sub">Loading…</div>
+    </div>
+    <div class="kpi-card" style="--accent:linear-gradient(90deg,#10b981,#06b6d4)">
+      <div class="label">Influenced % of Rillet Revenue</div>
+      <div class="value" id="kpi-influenced-pct">—%</div>
+      <div class="sub" id="kpi-influenced-pct-sub">Loading…</div>
+    </div>
   </div>
-  <div class="kpi-card" style="--accent:linear-gradient(90deg,#10b981,#06b6d4)">
-    <div class="label">Revenue YTD</div>
-    <div class="value" id="kpi-rev-ytd">$—</div>
-    <div class="sub" id="kpi-rev-ytd-sub">Loading…</div>
-  </div>
-  <div class="kpi-card" style="--accent:linear-gradient(90deg,#f59e0b,#f97316)">
-    <div class="label">New Pipeline MTD</div>
-    <div class="value" id="kpi-pl-mtd">$—</div>
-    <div class="sub" id="kpi-pl-mtd-sub">Loading…</div>
-  </div>
-  <div class="kpi-card" style="--accent:linear-gradient(90deg,#06b6d4,#6366f1)">
-    <div class="label">MTD Partner Sourced as % of Rillet Revenue</div>
-    <div class="value" id="kpi-pct">—%</div>
-    <div class="sub" id="kpi-pct-sub">Loading…</div>
-  </div>
-  <div class="kpi-card" style="--accent:linear-gradient(90deg,#10b981,#06b6d4)">
-    <div class="label">MTD Partner Influenced as % of Rillet Revenue</div>
-    <div class="value" id="kpi-influenced-pct">—%</div>
-    <div class="sub" id="kpi-influenced-pct-sub">Loading…</div>
+</div>
+
+<div class="kpi-group">
+  <div class="kpi-group-label">Year to Date</div>
+  <div class="kpi-row">
+    <div class="kpi-card" style="--accent:linear-gradient(90deg,#6366f1,#8b5cf6)">
+      <div class="label">Partner Revenue</div>
+      <div class="value" id="kpi-rev-ytd">$—</div>
+      <div class="sub" id="kpi-rev-ytd-sub">Loading…</div>
+    </div>
+    <div class="kpi-card" style="--accent:linear-gradient(90deg,#f59e0b,#f97316)">
+      <div class="label">New Pipeline</div>
+      <div class="value" id="kpi-pl-ytd">$—</div>
+      <div class="sub" id="kpi-pl-ytd-sub">Loading…</div>
+    </div>
+    <div class="kpi-card" style="--accent:linear-gradient(90deg,#06b6d4,#6366f1)">
+      <div class="label">Sourced % of Rillet Revenue</div>
+      <div class="value" id="kpi-pct-ytd">—%</div>
+      <div class="sub" id="kpi-pct-ytd-sub">Loading…</div>
+    </div>
+    <div class="kpi-card" style="--accent:linear-gradient(90deg,#10b981,#06b6d4)">
+      <div class="label">Influenced % of Rillet Revenue</div>
+      <div class="value" id="kpi-influenced-ytd">—%</div>
+      <div class="sub" id="kpi-influenced-ytd-sub">Loading…</div>
+    </div>
   </div>
 </div>
 
@@ -2060,52 +2090,68 @@ function fmt$(n) {
 function updateKpiCards() {
   const today = new Date();
   const curMonth = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0');
-  const prevMonths = raw.filter(r => r.month < curMonth);
   const curData  = raw.find(r => r.month === curMonth);
-
-  // Revenue MTD
-  const revMtd   = curData ? curData.cARR : 0;
-  const dealsMtd = curData ? curData.deals : 0;
   const ml = monthLabel(curMonth);
-  document.getElementById('kpi-rev-mtd').textContent = fmt$(revMtd);
-  document.getElementById('kpi-rev-mtd-sub').textContent = `${dealsMtd} deals · ${ml} (MTD)`;
 
-  // Revenue YTD
-  const revYtd   = raw.reduce((s,r) => s + r.cARR, 0);
-  const dealsYtd = raw.reduce((s,r) => s + r.deals, 0);
-  const months   = raw.map(r => r.month);
-  const firstM   = months.length ? monthLabel(months[0]) : '';
-  document.getElementById('kpi-rev-ytd').textContent = fmt$(revYtd);
-  document.getElementById('kpi-rev-ytd-sub').textContent = `${dealsYtd} deals · ${firstM} – ${ml} 2026`;
+  // ── MTD ──────────────────────────────────────
+  const revMtd   = curData ? curData.cARR  : 0;
+  const dealsMtd = curData ? curData.deals : 0;
+  document.getElementById('kpi-rev-mtd').textContent     = fmt$(revMtd);
+  document.getElementById('kpi-rev-mtd-sub').textContent = `${dealsMtd} deals · ${ml}`;
 
-  // New Pipeline MTD (from plChartData = CreatedDate)
   const plMtd = plChartData.find(r => r.month === curMonth);
-  const plArr = plMtd ? plMtd.arr : 0;
-  const plCnt = plMtd ? plMtd.cnt : 0;
-  document.getElementById('kpi-pl-mtd').textContent = fmt$(plArr);
-  document.getElementById('kpi-pl-mtd-sub').textContent = `${plCnt} opps · ${ml} (MTD)`;
+  const plArrMtd = plMtd ? plMtd.arr : 0;
+  const plCntMtd = plMtd ? plMtd.cnt : 0;
+  document.getElementById('kpi-pl-mtd').textContent     = fmt$(plArrMtd);
+  document.getElementById('kpi-pl-mtd-sub').textContent = `${plCntMtd} opps · ${ml}`;
 
-  // Partner % of Revenue
   const rilletMtd = _rilletData.find(r => r.month === curMonth);
   if (rilletMtd && rilletMtd.arr > 0) {
-    const pct = (revMtd / rilletMtd.arr * 100).toFixed(1);
-    document.getElementById('kpi-pct').textContent = pct + '%';
-    document.getElementById('kpi-pct-sub').textContent = `${ml} (MTD) · ${fmt$(revMtd)} of ${fmt$(rilletMtd.arr)} Rillet cARR`;
+    document.getElementById('kpi-pct').textContent     = (revMtd / rilletMtd.arr * 100).toFixed(1) + '%';
+    document.getElementById('kpi-pct-sub').textContent = `${fmt$(revMtd)} of ${fmt$(rilletMtd.arr)} Rillet cARR`;
   } else {
-    document.getElementById('kpi-pct').textContent = '—';
-    document.getElementById('kpi-pct-sub').textContent = ml + ' (MTD)';
+    document.getElementById('kpi-pct').textContent     = '—';
+    document.getElementById('kpi-pct-sub').textContent = ml;
   }
 
-  // MTD Partner Influenced % of Rillet Revenue
   const influencedMtd = _influenceData.find(r => r.month === curMonth && r.type === 'influenced');
-  const influencedArr = influencedMtd ? influencedMtd.arr : 0;
+  const inflArrMtd = influencedMtd ? influencedMtd.arr : 0;
   if (rilletMtd && rilletMtd.arr > 0) {
-    const ipct = (influencedArr / rilletMtd.arr * 100).toFixed(1);
-    document.getElementById('kpi-influenced-pct').textContent = ipct + '%';
-    document.getElementById('kpi-influenced-pct-sub').textContent = `${ml} (MTD) · ${fmt$(influencedArr)} of ${fmt$(rilletMtd.arr)} Rillet cARR`;
+    document.getElementById('kpi-influenced-pct').textContent     = (inflArrMtd / rilletMtd.arr * 100).toFixed(1) + '%';
+    document.getElementById('kpi-influenced-pct-sub').textContent = `${fmt$(inflArrMtd)} of ${fmt$(rilletMtd.arr)} Rillet cARR`;
   } else {
-    document.getElementById('kpi-influenced-pct').textContent = '—';
-    document.getElementById('kpi-influenced-pct-sub').textContent = ml + ' (MTD)';
+    document.getElementById('kpi-influenced-pct').textContent     = '—';
+    document.getElementById('kpi-influenced-pct-sub').textContent = ml;
+  }
+
+  // ── YTD ──────────────────────────────────────
+  const revYtd   = raw.reduce((s,r) => s + r.cARR,  0);
+  const dealsYtd = raw.reduce((s,r) => s + r.deals, 0);
+  const firstM   = raw.length ? monthLabel(raw[0].month) : '';
+  document.getElementById('kpi-rev-ytd').textContent     = fmt$(revYtd);
+  document.getElementById('kpi-rev-ytd-sub').textContent = `${dealsYtd} deals · ${firstM}–${ml}`;
+
+  const plArrYtd = plChartData.reduce((s,r) => s + r.arr, 0);
+  const plCntYtd = plChartData.reduce((s,r) => s + r.cnt, 0);
+  document.getElementById('kpi-pl-ytd').textContent     = fmt$(plArrYtd);
+  document.getElementById('kpi-pl-ytd-sub').textContent = `${plCntYtd} opps · ${firstM}–${ml}`;
+
+  const rilletYtd = _rilletData.reduce((s,r) => s + r.arr, 0);
+  if (rilletYtd > 0) {
+    document.getElementById('kpi-pct-ytd').textContent     = (revYtd / rilletYtd * 100).toFixed(1) + '%';
+    document.getElementById('kpi-pct-ytd-sub').textContent = `${fmt$(revYtd)} of ${fmt$(rilletYtd)} Rillet cARR`;
+  } else {
+    document.getElementById('kpi-pct-ytd').textContent     = '—';
+    document.getElementById('kpi-pct-ytd-sub').textContent = `${firstM}–${ml}`;
+  }
+
+  const inflArrYtd = _influenceData.filter(r => r.type === 'influenced').reduce((s,r) => s + r.arr, 0);
+  if (rilletYtd > 0) {
+    document.getElementById('kpi-influenced-ytd').textContent     = (inflArrYtd / rilletYtd * 100).toFixed(1) + '%';
+    document.getElementById('kpi-influenced-ytd-sub').textContent = `${fmt$(inflArrYtd)} of ${fmt$(rilletYtd)} Rillet cARR`;
+  } else {
+    document.getElementById('kpi-influenced-ytd').textContent     = '—';
+    document.getElementById('kpi-influenced-ytd-sub').textContent = `${firstM}–${ml}`;
   }
 
   // Header timestamp
