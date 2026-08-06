@@ -154,6 +154,65 @@
 
     /* give each section scroll clearance so sticky nav doesn't overlap */
     .dash-section { scroll-margin-top: 52px; }
+
+    /* ── Mobile ─────────────────────────────── */
+    @media (max-width: 768px) {
+      body { padding: 16px; }
+
+      .header {
+        flex-direction: column; gap: 10px; margin-bottom: 20px;
+      }
+      .header-left h1 { font-size: 18px; }
+      .header-left p  { font-size: 12px; }
+
+      .tab-nav {
+        margin: 0 -16px 20px;
+        padding-left: 16px;
+      }
+      .tab-btn { font-size: 11px; padding: 11px 12px 9px; }
+
+      .kpi-row { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+      .kpi-group { margin-bottom: 10px; }
+
+      .chart-card { padding: 16px; margin-bottom: 16px; }
+      .chart-header { flex-direction: column; gap: 10px; margin-bottom: 14px; }
+      .chart-wrap { height: 220px; }
+
+      /* Make toggle buttons wrap neatly */
+      #cohortToggle, .chart-header > div:last-child {
+        display: flex; flex-wrap: wrap; gap: 4px;
+      }
+
+      /* Tables: horizontal scroll */
+      .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      table { font-size: 12px; }
+      th, td { padding: 8px 10px; }
+
+      /* Auth box */
+      .pw-box { width: 92vw; padding: 28px 24px; }
+    }
+
+    @media (max-width: 480px) {
+      .kpi-row { grid-template-columns: repeat(2, 1fr); }
+      .kpi-card .value { font-size: 17px; }
+      .chart-wrap { height: 190px; }
+      .chart-title { font-size: 13px; }
+
+      /* Leaderboard: hide SVG connector, stack columns */
+      #lbSvg { display: none !important; }
+      [style*="grid-template-columns:1fr 110px 1fr"] {
+        display: block !important;
+      }
+      [style*="grid-template-columns:1fr 110px 1fr"] > div:nth-child(2) {
+        display: none !important;
+      }
+
+      /* Deal summary strip: 3 → 1 col */
+      #dealSummaryStrip { grid-template-columns: 1fr !important; }
+
+      /* Funnel summary KPIs: 4 → 2 col */
+      #funnelSummary { grid-template-columns: repeat(2,1fr) !important; }
+    }
   </style>
 </head>
 <body>
@@ -319,10 +378,12 @@
       <div class="chart-title">ARR by Partner Type</div>
       <div id="typeToggle" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;"></div>
     </div>
+    <div class="table-wrap">
     <table>
       <thead><tr><th>Type</th><th style="text-align:right">ARR</th><th style="text-align:right">Deals</th></tr></thead>
       <tbody id="typeTableBody"></tbody>
     </table>
+    </div>
     <div style="margin-top:20px">
       <div style="font-size:11px;color:#475569;margin-bottom:10px;font-weight:600;letter-spacing:0.4px;text-transform:uppercase;">Share of ARR</div>
       <div id="shareBars"></div>
@@ -352,10 +413,12 @@
       <div class="chart-title">Pipeline ARR by Partner Type</div>
       <div id="plTypeToggle" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;"></div>
     </div>
+    <div class="table-wrap">
     <table>
       <thead><tr><th>Type</th><th style="text-align:right">ARR</th><th style="text-align:right">Opps</th></tr></thead>
       <tbody id="plTypeBody"></tbody>
     </table>
+    </div>
     <div style="margin-top:20px">
       <div style="font-size:11px;color:#475569;margin-bottom:10px;font-weight:600;letter-spacing:0.4px;text-transform:uppercase;">Share of ARR</div>
       <div id="plShareBars"></div>
@@ -401,6 +464,7 @@
       <div class="legend-item"><div class="legend-dot" style="background:#6366f1"></div>Sourced</div>
       <div class="legend-item"><div class="legend-dot" style="background:#06b6d4"></div>Influenced</div>
       <div class="legend-item"><div style="width:20px;height:2px;background:#f59e0b;border-radius:1px;"></div><span style="margin-left:6px;font-size:12px;color:#94a3b8;">% Influenced</span></div>
+      <div class="legend-item"><div style="width:20px;height:2px;background:#a78bfa;border-radius:1px;border-top:2px dashed #a78bfa;"></div><span style="margin-left:6px;font-size:12px;color:#94a3b8;">% Sourced</span></div>
     </div>
   </div>
   <div class="chart-wrap" style="height:260px"><canvas id="influenceChart"></canvas></div>
@@ -1629,6 +1693,14 @@ function initInfluenceChart() {
     return parseFloat((inf / rillet.arr * 100).toFixed(1));
   });
 
+  // % of Rillet revenue that is sourced
+  const pctSourced = months.map(m => {
+    const src = sourcedData[months.indexOf(m)];
+    const rillet = _rilletData.find(r => r.month === m);
+    if (!rillet || rillet.arr <= 0) return null;
+    return parseFloat((src / rillet.arr * 100).toFixed(1));
+  });
+
   new Chart(document.getElementById('influenceChart').getContext('2d'), {
     type: 'bar',
     data: {
@@ -1656,13 +1728,22 @@ function initInfluenceChart() {
           borderColor: '#f59e0b',
           backgroundColor: 'rgba(245,158,11,0.1)',
           borderWidth: 2,
-          pointRadius: 4,
-          pointHoverRadius: 6,
+          pointRadius: 4, pointHoverRadius: 6,
           pointBackgroundColor: '#f59e0b',
-          tension: 0.3,
-          spanGaps: false,
-          fill: false,
-          stack: undefined,
+          tension: 0.3, spanGaps: false, fill: false, stack: undefined,
+        },
+        {
+          label: '% Sourced',
+          data: pctSourced,
+          type: 'line',
+          yAxisID: 'pct',
+          borderColor: '#a78bfa',
+          backgroundColor: 'rgba(167,139,250,0.1)',
+          borderWidth: 2,
+          borderDash: [5, 3],
+          pointRadius: 4, pointHoverRadius: 6,
+          pointBackgroundColor: '#a78bfa',
+          tension: 0.3, spanGaps: false, fill: false, stack: undefined,
         }
       ]
     },
@@ -1675,8 +1756,8 @@ function initInfluenceChart() {
           ...tooltipDefaults(),
           callbacks: {
             label: ctx => {
-              if (ctx.dataset.label === '% Influenced') {
-                return ctx.parsed.y != null ? ` % Influenced: ${ctx.parsed.y}%` : null;
+              if (ctx.dataset.label === '% Influenced' || ctx.dataset.label === '% Sourced') {
+                return ctx.parsed.y != null ? ` ${ctx.dataset.label}: ${ctx.parsed.y}%` : null;
               }
               return ` ${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString()}`;
             },
