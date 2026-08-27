@@ -185,6 +185,53 @@ module.exports = async (req, res) => {
       console.warn('influence query failed (Partner_Influenced__c may not exist):', e.message);
     }
 
+    const [dailyCWRes, dailyPipeRes, dailyCWAllRes, dailyPipeAllRes] = await Promise.all([
+
+      // 12. Daily partner CW ARR by day of month
+      Q(`SELECT FORMAT([CloseDate],'yyyy-MM') as month,
+                DAY([CloseDate]) as day,
+                SUM([cARR__c]) as arr
+         FROM [${CONN}].[Salesforce].[Opportunity]
+         WHERE [StageName] = 'Closed Won'
+           AND [LeadSource] IN ${PARTNER_SOURCES}
+           AND [CloseDate] >= '${START_DATE}'
+           AND [CloseDate] >= [CreatedDate]
+         GROUP BY FORMAT([CloseDate],'yyyy-MM'), DAY([CloseDate])
+         ORDER BY month, day`),
+
+      // 13. Daily partner pipeline by day of month
+      Q(`SELECT FORMAT([CreatedDate],'yyyy-MM') as month,
+                DAY([CreatedDate]) as day,
+                SUM([cARR__c]) as arr
+         FROM [${CONN}].[Salesforce].[Opportunity]
+         WHERE [LeadSource] IN ${PARTNER_SOURCES}
+           AND [CreatedDate] >= '${START_DATE}'
+           AND [Relevant_Partner__c] IS NOT NULL
+         GROUP BY FORMAT([CreatedDate],'yyyy-MM'), DAY([CreatedDate])
+         ORDER BY month, day`),
+
+      // 14. Daily ALL Rillet CW ARR by day of month
+      Q(`SELECT FORMAT([CloseDate],'yyyy-MM') as month,
+                DAY([CloseDate]) as day,
+                SUM([cARR__c]) as arr
+         FROM [${CONN}].[Salesforce].[Opportunity]
+         WHERE [StageName] = 'Closed Won'
+           AND [CloseDate] >= '${START_DATE}'
+           AND [CloseDate] >= [CreatedDate]
+           AND FORMAT([CloseDate],'yyyy-MM') <> '2027-05'
+         GROUP BY FORMAT([CloseDate],'yyyy-MM'), DAY([CloseDate])
+         ORDER BY month, day`),
+
+      // 15. Daily ALL Rillet pipeline originated by day of month
+      Q(`SELECT FORMAT([CreatedDate],'yyyy-MM') as month,
+                DAY([CreatedDate]) as day,
+                SUM([cARR__c]) as arr
+         FROM [${CONN}].[Salesforce].[Opportunity]
+         WHERE [CreatedDate] >= '${START_DATE}'
+         GROUP BY FORMAT([CreatedDate],'yyyy-MM'), DAY([CreatedDate])
+         ORDER BY month, day`),
+    ]);
+
     const [rilletCohortRes, rilletTotalRes] = await Promise.all([
 
       // 9. All Rillet CW by cohort+close month → Rillet Overall cohort line
@@ -220,6 +267,10 @@ module.exports = async (req, res) => {
       influence:     influenceRec,                   // [{month, type, deals, arr}] sourced|influenced
       rilletCohort:  rilletCohortRes.recordset,
       rilletTotal:   rilletTotalRes.recordset,
+      dailyCW:       dailyCWRes.recordset,
+      dailyPipe:     dailyPipeRes.recordset,
+      dailyCWAll:    dailyCWAllRes.recordset,
+      dailyPipeAll:  dailyPipeAllRes.recordset,
       generatedAt: new Date().toISOString(),
     });
 

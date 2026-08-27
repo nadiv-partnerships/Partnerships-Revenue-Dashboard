@@ -291,6 +291,8 @@
 <nav class="tab-nav" id="dashTabs">
   <button class="tab-btn active" data-target="sec-cw">Closed Won</button>
   <button class="tab-btn" data-target="sec-pipeline-chart">Pipeline</button>
+  <button class="tab-btn" data-target="sec-daily-cw">Daily Revenue</button>
+  <button class="tab-btn" data-target="sec-daily-pipe">Daily Pipeline</button>
   <button class="tab-btn" data-target="sec-avg-deal">Avg Deal Size</button>
   <button class="tab-btn" data-target="sec-pct">% of Rillet</button>
   <button class="tab-btn" data-target="sec-influence">Sourced vs Influenced</button>
@@ -425,6 +427,42 @@
     </div>
   </div>
 
+</div>
+
+<!-- Daily Revenue Accumulation -->
+<div id="sec-daily-cw" class="chart-card" style="scroll-margin-top:58px;margin-bottom:24px;">
+  <div class="chart-header">
+    <div>
+      <div class="chart-title">Revenue — Intra-Month Accumulation</div>
+      <div class="chart-subtitle">Cumulative closed won ARR by day of month · each line = one month</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+      <div style="display:flex;gap:4px;">
+        <button class="toggle-btn active" id="dailyCWModePartner" onclick="setDailyCWMode('partner')">Partner</button>
+        <button class="toggle-btn" id="dailyCWModeAll" onclick="setDailyCWMode('all')">All Rillet</button>
+      </div>
+      <div id="dailyCWToggle" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;"></div>
+    </div>
+  </div>
+  <div class="chart-wrap" style="height:280px"><canvas id="dailyCWChart"></canvas></div>
+</div>
+
+<!-- Daily Pipeline Accumulation -->
+<div id="sec-daily-pipe" class="chart-card" style="scroll-margin-top:58px;margin-bottom:24px;">
+  <div class="chart-header">
+    <div>
+      <div class="chart-title">Pipeline — Intra-Month Accumulation</div>
+      <div class="chart-subtitle">Cumulative pipeline originated by day of month · each line = one month</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+      <div style="display:flex;gap:4px;">
+        <button class="toggle-btn active" id="dailyPipeModePartner" onclick="setDailyPipeMode('partner')">Partner</button>
+        <button class="toggle-btn" id="dailyPipeModeAll" onclick="setDailyPipeMode('all')">All Rillet</button>
+      </div>
+      <div id="dailyPipeToggle" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;"></div>
+    </div>
+  </div>
+  <div class="chart-wrap" style="height:280px"><canvas id="dailyPipeChart"></canvas></div>
 </div>
 
 <!-- Avg cARR per Deal: Partner vs Rillet -->
@@ -1208,6 +1246,129 @@ function renderPlTypeTable(key) {
 }
 
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// INTRA-MONTH ACCUMULATION CHARTS
+// ─────────────────────────────────────────────
+let _dailyCW      = [];
+let _dailyPipe    = [];
+let _dailyCWAll   = [];
+let _dailyPipeAll = [];
+
+function setDailyCWMode(mode) {
+  document.getElementById('dailyCWModePartner').classList.toggle('active', mode === 'partner');
+  document.getElementById('dailyCWModeAll').classList.toggle('active', mode === 'all');
+  buildDailyChart('dailyCWChart', 'dailyCWToggle', mode === 'partner' ? _dailyCW : _dailyCWAll);
+}
+
+function setDailyPipeMode(mode) {
+  document.getElementById('dailyPipeModePartner').classList.toggle('active', mode === 'partner');
+  document.getElementById('dailyPipeModeAll').classList.toggle('active', mode === 'all');
+  buildDailyChart('dailyPipeChart', 'dailyPipeToggle', mode === 'partner' ? _dailyPipe : _dailyPipeAll);
+}
+
+function buildDailyChart(canvasId, toggleId, data) {
+  const existing = Chart.getChart(document.getElementById(canvasId));
+  if (existing) existing.destroy();
+  if (!data.length) return;
+
+  // Group: { month → { day → arr } }
+  const byMonth = {};
+  data.forEach(r => {
+    if (!byMonth[r.month]) byMonth[r.month] = {};
+    byMonth[r.month][r.day] = r.arr;
+  });
+
+  const months = Object.keys(byMonth).sort();
+  const today = new Date();
+  const curMonth = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0');
+  const todayDay = today.getDate();
+  const COLORS = ['#6366f1','#06b6d4','#10b981','#f59e0b','#ec4899','#f97316','#a855f7','#f43f5e'];
+
+  const datasets = months.map((m, i) => {
+    const isCur = m === curMonth;
+    const [yr, mo] = m.split('-').map(Number);
+    const daysInMonth = new Date(yr, mo, 0).getDate();
+    const dayMap = byMonth[m];
+    let cum = 0;
+    const pts = Array.from({length: daysInMonth}, (_, j) => {
+      const day = j + 1;
+      cum += (dayMap[day] || 0);
+      if (isCur && day > todayDay) return null;
+      return cum;
+    });
+    const color = COLORS[i % COLORS.length];
+    return {
+      label: monthLabel(m),
+      data: pts,
+      borderColor: color,
+      backgroundColor: 'transparent',
+      borderWidth: isCur ? 2.5 : 1.5,
+      borderDash: isCur ? [5,4] : [],
+      pointRadius: 0, pointHoverRadius: 5,
+      pointBackgroundColor: color,
+      tension: 0.15, spanGaps: false,
+    };
+  });
+
+  // X labels: 1–31
+  const maxDays = Math.max(...months.map(m => {
+    const [yr, mo] = m.split('-').map(Number);
+    return new Date(yr, mo, 0).getDate();
+  }));
+  const labels = Array.from({length: maxDays}, (_, i) => String(i+1));
+
+  const chart = new Chart(document.getElementById(canvasId).getContext('2d'), {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          ...tooltipDefaults(),
+          callbacks: {
+            title: items => `Day ${items[0].label}`,
+            label: ctx => ctx.parsed.y != null ? ` ${ctx.dataset.label}: ${fmt$(ctx.parsed.y)}` : null,
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: { color: '#64748b', font: { size: 10 }, maxTicksLimit: 16 }
+        },
+        y: {
+          min: 0,
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: { color: '#64748b', font: { size: 11 }, callback: v => fmt$(v) }
+        }
+      }
+    }
+  });
+
+  // Toggle buttons
+  const toggleEl = document.getElementById(toggleId);
+  toggleEl.innerHTML = '';
+  datasets.forEach((ds, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'toggle-btn active';
+    btn.textContent = ds.label;
+    btn.style.borderColor = ds.borderColor;
+    if (ds.label === monthLabel(curMonth)) btn.style.fontWeight = '700';
+    btn.addEventListener('click', () => {
+      const meta = chart.getDatasetMeta(i);
+      meta.hidden = !meta.hidden;
+      btn.classList.toggle('active', !meta.hidden);
+      chart.update();
+    });
+    toggleEl.appendChild(btn);
+  });
+}
+
+function initDailyCWChart()   { buildDailyChart('dailyCWChart',   'dailyCWToggle',   _dailyCW); }
+function initDailyPipeChart() { buildDailyChart('dailyPipeChart', 'dailyPipeToggle', _dailyPipe); }
+
 // AVG cARR PER DEAL — PARTNER VS RILLET
 // ─────────────────────────────────────────────
 function initAvgDealChart() {
@@ -2126,7 +2287,7 @@ function initPipelineAccordion() {
 (function() {
   const tabs  = document.querySelectorAll('#dashTabs .tab-btn');
   const secs  = [
-    'sec-cw','sec-pipeline-chart','sec-avg-deal','sec-pct',
+    'sec-cw','sec-pipeline-chart','sec-daily-cw','sec-daily-pipe','sec-avg-deal','sec-pct',
     'sec-influence','sec-referrals','sec-velocity',
     'sec-pipeline','sec-performance','sec-partners','sec-deals'
   ];
@@ -2269,6 +2430,10 @@ async function loadDashboard() {
     _rilletCohort = (data.rilletCohort || []).map(r => ({ cohort_month: r.cohort_month, close_month: r.close_month, deals: +r.deals, arr: +(r.arr||0) }));
     _rilletTotal = {};
     (data.rilletTotal || []).forEach(r => { _rilletTotal[r.month] = +r.deals; });
+    _dailyCW      = (data.dailyCW      || []).map(r => ({ month: r.month, day: +r.day, arr: +(r.arr||0) }));
+    _dailyPipe    = (data.dailyPipe    || []).map(r => ({ month: r.month, day: +r.day, arr: +(r.arr||0) }));
+    _dailyCWAll   = (data.dailyCWAll   || []).map(r => ({ month: r.month, day: +r.day, arr: +(r.arr||0) }));
+    _dailyPipeAll = (data.dailyPipeAll || []).map(r => ({ month: r.month, day: +r.day, arr: +(r.arr||0) }));
     _influenceData = (data.influence || []).map(r => ({ month: r.month, type: r.type, deals: +r.deals, arr: +r.arr }));
     _allDeals    = (data.allDeals  || []).map(r => ({
       Id: r.Id, Name: r.Name, StageName: r.StageName, cARR__c: +r.cARR__c, LeadSource: r.LeadSource,
@@ -2300,6 +2465,8 @@ async function loadDashboard() {
     initSplitChart();
     initFunnelTable();
     initCohortChart();
+    initDailyCWChart();
+    initDailyPipeChart();
     initInfluenceChart();
     initPipelineAccordion();
     updateKpiCards();
