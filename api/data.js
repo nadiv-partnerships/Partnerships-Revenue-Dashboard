@@ -4,12 +4,20 @@
 // Required Vercel environment variables:
 //   CDATA_USER  — your CData Connect AI login email
 //   CDATA_PAT   — your CData Connect AI Personal Access Token (Settings → PATs)
+//
+// Timezone: Salesforce CreatedDate is stored UTC. All CreatedDate groupings
+// are shifted by -7h (PDT) so month/day buckets align with Pacific Time.
+// CloseDate is a date-only field (no time component) and needs no adjustment.
 
 const sql = require('mssql');
 
 const PARTNER_SOURCES = `('Inbound - Partner','Partner - Resell','Outbound - Partner','Partnerships')`;
 const START_DATE = '2026-01-01';
 const CONN = 'Salesforce1';
+
+// Convert a UTC datetime column to Pacific Time (PDT = UTC-7) before formatting.
+// Use this wrapper for every CreatedDate grouping; CloseDate is date-only, no wrapper needed.
+const PT = (col) => `DATEADD(hour,-7,${col})`;
 
 // Partner name helper: NULL or person-account (0018a...) → 'Unattributed'
 const PARTNER_NAME = `CASE WHEN o.[Relevant_Partner__c] IS NULL OR o.[Relevant_Partner__c] LIKE '0018a%'
@@ -81,18 +89,18 @@ module.exports = async (req, res) => {
          ORDER BY month`),
 
       // 3. All originated opps by CREATE month  →  pipeline sourced area chart (all stages, matches SFDC)
-      Q(`SELECT FORMAT(o.[CreatedDate],'yyyy-MM') as month,
+      Q(`SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as month,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as cnt
          FROM [${CONN}].[Salesforce].[Opportunity] o
          WHERE o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
            AND o.[Relevant_Partner__c] IS NOT NULL
-         GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM')
+         GROUP BY FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM')
          ORDER BY month`),
 
       // 4. All originated opps by CreatedDate + partner  →  plRows / pipeline type table / originated leaderboard
-      Q(`SELECT FORMAT(o.[CreatedDate],'yyyy-MM') as month,
+      Q(`SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as month,
                 ${PARTNER_NAME} as partner,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as opps
@@ -102,27 +110,27 @@ module.exports = async (req, res) => {
          WHERE o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
            AND o.[Relevant_Partner__c] IS NOT NULL
-         GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM'),
+         GROUP BY FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM'),
                   ${PARTNER_NAME}
          ORDER BY month, arr DESC`),
 
       // 5. Distinct active company partners per create month  →  referral activity chart
       //    Keep person-account filter here: we want real company partner count
-      Q(`SELECT FORMAT(o.[CreatedDate],'yyyy-MM') as month,
+      Q(`SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as month,
                 COUNT(DISTINCT o.[Relevant_Partner__c]) as partners
          FROM [${CONN}].[Salesforce].[Opportunity] o
          WHERE o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
            AND o.[Relevant_Partner__c] IS NOT NULL
            AND o.[Relevant_Partner__c] NOT LIKE '0018a%'
-         GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM')
+         GROUP BY FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM')
          ORDER BY month`),
     ]);
 
     const [splitRes, cohortRes, allDealsRes] = await Promise.all([
 
       // 6. All opps by create month + inbound/resell → split chart
-      Q(`SELECT FORMAT(o.[CreatedDate],'yyyy-MM') as month,
+      Q(`SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as month,
                 CASE WHEN o.[LeadSource] = 'Partner - Resell' THEN 'resell' ELSE 'inbound' END as type,
                 COUNT(*) as deals,
                 SUM(o.[cARR__c]) as arr
@@ -130,12 +138,12 @@ module.exports = async (req, res) => {
          WHERE o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
            AND o.[Relevant_Partner__c] IS NOT NULL
-         GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM'),
+         GROUP BY FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM'),
                   CASE WHEN o.[LeadSource] = 'Partner - Resell' THEN 'resell' ELSE 'inbound' END
          ORDER BY month`),
 
       // 7. CW by cohort month + close month → revenue by origination lag chart
-      Q(`SELECT FORMAT(o.[CreatedDate],'yyyy-MM') as cohort_month,
+      Q(`SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as cohort_month,
                 FORMAT(o.[CloseDate],'yyyy-MM') as close_month,
                 COUNT(*) as deals,
                 SUM(o.[cARR__c]) as arr
@@ -144,13 +152,13 @@ module.exports = async (req, res) => {
            AND o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
            AND o.[Relevant_Partner__c] IS NOT NULL
-         GROUP BY FORMAT(o.[CreatedDate],'yyyy-MM'), FORMAT(o.[CloseDate],'yyyy-MM')
+         GROUP BY FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM'), FORMAT(o.[CloseDate],'yyyy-MM')
          ORDER BY cohort_month, close_month`),
 
       // 8. All opps (all stages) individual records → funnel table + pipeline accordion
       Q(`SELECT o.[Id], o.[Name], o.[StageName], o.[cARR__c], o.[LeadSource],
                 ${PARTNER_NAME} as partner,
-                FORMAT(o.[CreatedDate],'yyyy-MM') as create_month,
+                FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as create_month,
                 FORMAT(o.[CloseDate],'yyyy-MM') as close_month
          FROM [${CONN}].[Salesforce].[Opportunity] o
          LEFT JOIN [${CONN}].[Salesforce].[Account] a ON o.[Relevant_Partner__c] = a.[Id]
@@ -199,15 +207,15 @@ module.exports = async (req, res) => {
          GROUP BY FORMAT([CloseDate],'yyyy-MM'), DAY([CloseDate])
          ORDER BY month, day`),
 
-      // 13. Daily partner pipeline by day of month
-      Q(`SELECT FORMAT([CreatedDate],'yyyy-MM') as month,
-                DAY([CreatedDate]) as day,
+      // 13. Daily partner pipeline by day of month (PT-adjusted)
+      Q(`SELECT FORMAT(${PT('[CreatedDate]')},'yyyy-MM') as month,
+                DAY(${PT('[CreatedDate]')}) as day,
                 SUM([cARR__c]) as arr
          FROM [${CONN}].[Salesforce].[Opportunity]
          WHERE [LeadSource] IN ${PARTNER_SOURCES}
            AND [CreatedDate] >= '${START_DATE}'
            AND [Relevant_Partner__c] IS NOT NULL
-         GROUP BY FORMAT([CreatedDate],'yyyy-MM'), DAY([CreatedDate])
+         GROUP BY FORMAT(${PT('[CreatedDate]')},'yyyy-MM'), DAY(${PT('[CreatedDate]')})
          ORDER BY month, day`),
 
       // 14. Daily ALL Rillet CW ARR by day of month
@@ -222,20 +230,20 @@ module.exports = async (req, res) => {
          GROUP BY FORMAT([CloseDate],'yyyy-MM'), DAY([CloseDate])
          ORDER BY month, day`),
 
-      // 15. Daily ALL Rillet pipeline originated by day of month
-      Q(`SELECT FORMAT([CreatedDate],'yyyy-MM') as month,
-                DAY([CreatedDate]) as day,
+      // 15. Daily ALL Rillet pipeline originated by day of month (PT-adjusted)
+      Q(`SELECT FORMAT(${PT('[CreatedDate]')},'yyyy-MM') as month,
+                DAY(${PT('[CreatedDate]')}) as day,
                 SUM([cARR__c]) as arr
          FROM [${CONN}].[Salesforce].[Opportunity]
          WHERE [CreatedDate] >= '${START_DATE}'
-         GROUP BY FORMAT([CreatedDate],'yyyy-MM'), DAY([CreatedDate])
+         GROUP BY FORMAT(${PT('[CreatedDate]')},'yyyy-MM'), DAY(${PT('[CreatedDate]')})
          ORDER BY month, day`),
     ]);
 
     const [rilletCohortRes, rilletTotalRes] = await Promise.all([
 
-      // 9. All Rillet CW by cohort+close month → Rillet Overall cohort line
-      Q(`SELECT FORMAT([CreatedDate],'yyyy-MM') as cohort_month,
+      // 9. All Rillet CW by cohort+close month → Rillet Overall cohort line (PT-adjusted)
+      Q(`SELECT FORMAT(${PT('[CreatedDate]')},'yyyy-MM') as cohort_month,
                 FORMAT([CloseDate],'yyyy-MM') as close_month,
                 COUNT(*) as deals,
                 SUM([cARR__c]) as arr
@@ -243,15 +251,15 @@ module.exports = async (req, res) => {
          WHERE [StageName] = 'Closed Won'
            AND [CreatedDate] >= '${START_DATE}'
            AND [CloseDate] >= [CreatedDate]
-         GROUP BY FORMAT([CreatedDate],'yyyy-MM'), FORMAT([CloseDate],'yyyy-MM')
+         GROUP BY FORMAT(${PT('[CreatedDate]')},'yyyy-MM'), FORMAT([CloseDate],'yyyy-MM')
          ORDER BY cohort_month, close_month`),
 
-      // 10. All Rillet opps by create month → denominator for Rillet Overall line
-      Q(`SELECT FORMAT([CreatedDate],'yyyy-MM') as month,
+      // 10. All Rillet opps by create month → denominator for Rillet Overall line (PT-adjusted)
+      Q(`SELECT FORMAT(${PT('[CreatedDate]')},'yyyy-MM') as month,
                 COUNT(*) as deals
          FROM [${CONN}].[Salesforce].[Opportunity]
          WHERE [CreatedDate] >= '${START_DATE}'
-         GROUP BY FORMAT([CreatedDate],'yyyy-MM')
+         GROUP BY FORMAT(${PT('[CreatedDate]')},'yyyy-MM')
          ORDER BY month`),
     ]);
 
