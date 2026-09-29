@@ -2610,8 +2610,10 @@ function updateKpiCards() {
     document.getElementById('kpi-pct-ytd-sub').textContent = `${firstM}–${ml}`;
   }
 
-  // YTD: always use boolean Partner_Influenced__c (full history); junction only has recent months
-  const inflArrYtd = _influenceData.filter(r => r.type === 'influenced').reduce((s,r) => s + r.arr, 0);
+  // YTD: use combined query (boolean OR junction, deduped at SQL level)
+  const inflArrYtd = _influencedJunction.length
+    ? _influencedJunction.reduce((s,r) => s + r.arr, 0)
+    : _influenceData.filter(r => r.type === 'influenced').reduce((s,r) => s + r.arr, 0);
   if (rilletYtd > 0) {
     document.getElementById('kpi-influenced-ytd').textContent     = (inflArrYtd / rilletYtd * 100).toFixed(1) + '%';
     document.getElementById('kpi-influenced-ytd-sub').textContent = `${fmt$(inflArrYtd)} of ${fmt$(rilletYtd)} Rillet cARR`;

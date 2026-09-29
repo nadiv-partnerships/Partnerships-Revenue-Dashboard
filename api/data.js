@@ -245,7 +245,9 @@ module.exports = async (req, res) => {
     try {
       const [ijRes, iplbRes] = await Promise.all([
 
-        // 16. Influenced CW by close month — deduped by opp (one opp with N influencers counted once)
+        // 16. Influenced CW by close month — union of boolean (Partner_Influenced__c=1) OR junction record
+        //     Deduped by opp: one opp with N influencers still counted once
+        //     Excludes partner-sourced deals (those are in the Sourced bucket)
         Q(`SELECT FORMAT(o.[CloseDate],'yyyy-MM') as month,
                   COUNT(*) as deals,
                   SUM(o.[cARR__c]) as arr
@@ -253,10 +255,14 @@ module.exports = async (req, res) => {
            WHERE o.[StageName] = 'Closed Won'
              AND o.[CloseDate] >= '${START_DATE}'
              AND o.[CloseDate] >= o.[CreatedDate]
-             AND o.[Id] IN (
-               SELECT pi.[Opportunity_Influenced__c]
-               FROM [${CONN}].[Salesforce].[Partner_Influence__c] pi
-               WHERE pi.[IsDeleted] = 0
+             AND o.[LeadSource] NOT IN ${PARTNER_SOURCES}
+             AND (
+               o.[Partner_Influenced__c] = 1
+               OR o.[Id] IN (
+                 SELECT pi.[Opportunity_Influenced__c]
+                 FROM [${CONN}].[Salesforce].[Partner_Influence__c] pi
+                 WHERE pi.[IsDeleted] = 0
+               )
              )
            GROUP BY FORMAT(o.[CloseDate],'yyyy-MM')
            ORDER BY month`),
