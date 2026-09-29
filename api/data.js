@@ -240,6 +240,48 @@ module.exports = async (req, res) => {
          ORDER BY month, day`),
     ]);
 
+    // 16 & 17. Partner Influence junction object queries
+    let influencedJunctionRec = [], influencePartnerLBRec = [];
+    try {
+      const [ijRes, iplbRes] = await Promise.all([
+
+        // 16. Influenced CW by close month — deduped by opp (one opp with N influencers counted once)
+        Q(`SELECT FORMAT(o.[CloseDate],'yyyy-MM') as month,
+                  COUNT(*) as deals,
+                  SUM(o.[cARR__c]) as arr
+           FROM [${CONN}].[Salesforce].[Opportunity] o
+           WHERE o.[StageName] = 'Closed Won'
+             AND o.[CloseDate] >= '${START_DATE}'
+             AND o.[CloseDate] >= o.[CreatedDate]
+             AND o.[Id] IN (
+               SELECT pi.[Opportunity_Influenced__c]
+               FROM [${CONN}].[Salesforce].[Partner_Influence__c] pi
+               WHERE pi.[IsDeleted] = 0
+             )
+           GROUP BY FORMAT(o.[CloseDate],'yyyy-MM')
+           ORDER BY month`),
+
+        // 17. Influenced CW by influencing partner + close month (each partner gets full deal credit)
+        Q(`SELECT a.[Name] as partner,
+                  FORMAT(o.[CloseDate],'yyyy-MM') as month,
+                  COUNT(DISTINCT o.[Id]) as deals,
+                  SUM(o.[cARR__c]) as arr
+           FROM [${CONN}].[Salesforce].[Partner_Influence__c] pi
+           INNER JOIN [${CONN}].[Salesforce].[Opportunity] o ON pi.[Opportunity_Influenced__c] = o.[Id]
+           INNER JOIN [${CONN}].[Salesforce].[Account] a ON pi.[Influencing_Partner__c] = a.[Id]
+           WHERE o.[StageName] = 'Closed Won'
+             AND o.[CloseDate] >= '${START_DATE}'
+             AND o.[CloseDate] >= o.[CreatedDate]
+             AND pi.[IsDeleted] = 0
+           GROUP BY a.[Name], FORMAT(o.[CloseDate],'yyyy-MM')
+           ORDER BY month, arr DESC`),
+      ]);
+      influencedJunctionRec = ijRes.recordset;
+      influencePartnerLBRec = iplbRes.recordset;
+    } catch (e) {
+      console.warn('Partner_Influence__c junction queries failed:', e.message);
+    }
+
     const [rilletCohortRes, rilletTotalRes] = await Promise.all([
 
       // 9. All Rillet CW by cohort+close month → Rillet Overall cohort line (PT-adjusted)
@@ -272,7 +314,9 @@ module.exports = async (req, res) => {
       split:       splitRes.recordset,
       cohort:      cohortRes.recordset,
       allDeals:      allDealsRes.recordset,
-      influence:     influenceRec,                   // [{month, type, deals, arr}] sourced|influenced
+      influence:          influenceRec,              // [{month, type, deals, arr}] sourced|influenced (boolean-based)
+      influencedJunction: influencedJunctionRec,   // [{month, deals, arr}] deduped from Partner_Influence__c
+      influencePartnerLB: influencePartnerLBRec,   // [{partner, month, deals, arr}] per influencing partner
       rilletCohort:  rilletCohortRes.recordset,
       rilletTotal:   rilletTotalRes.recordset,
       dailyCW:       dailyCWRes.recordset,

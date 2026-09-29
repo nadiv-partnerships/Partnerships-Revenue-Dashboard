@@ -496,7 +496,7 @@
   <div class="chart-header">
     <div>
       <div class="chart-title">Partner Sourced vs. Influenced Revenue</div>
-      <div class="chart-subtitle">Closed Won ARR by close month · sourced = partner lead source · influenced = Partner Influenced ✓ (excl. sourced)</div>
+      <div class="chart-subtitle">Closed Won ARR by close month · sourced = partner lead source · influenced = Partner_Influence__c junction records (deduped by opp)</div>
     </div>
     <div class="legend-row">
       <div class="legend-item"><div class="legend-dot" style="background:#6366f1"></div>Sourced</div>
@@ -506,6 +506,26 @@
     </div>
   </div>
   <div class="chart-wrap" style="height:260px"><canvas id="influenceChart"></canvas></div>
+
+  <!-- Partner Influence Leaderboard -->
+  <div style="margin-top:20px;">
+    <div style="font-size:12px;font-weight:700;color:#94a3b8;letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px;">Influencing Partners — CW ARR credited per partner</div>
+    <div id="influenceLBWrap" style="overflow-x:auto;">
+      <table id="influenceLBTable" style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="color:#64748b;text-align:left;border-bottom:1px solid #1e293b;">
+            <th style="padding:6px 10px;">Partner</th>
+            <th style="padding:6px 10px;text-align:right;">Deals</th>
+            <th style="padding:6px 10px;text-align:right;">ARR (YTD)</th>
+            <th style="padding:6px 10px;text-align:right;">ARR (MTD)</th>
+          </tr>
+        </thead>
+        <tbody id="influenceLBBody">
+          <tr><td colspan="4" style="padding:12px 10px;color:#475569;">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <!-- Partner Referral Activity -->
@@ -1843,8 +1863,14 @@ function initInfluenceChart() {
   const months = [...new Set(_influenceData.map(r => r.month))].sort();
   const labels = months.map(monthLabel);
 
-  const sourcedData    = months.map(m => { const r = _influenceData.find(d => d.month === m && d.type === 'sourced');   return r ? +r.arr : 0; });
-  const influencedData = months.map(m => { const r = _influenceData.find(d => d.month === m && d.type === 'influenced'); return r ? +r.arr : 0; });
+  const sourcedData = months.map(m => { const r = _influenceData.find(d => d.month === m && d.type === 'sourced'); return r ? +r.arr : 0; });
+  // Use junction-based influenced data (deduped by opp); fall back to boolean if not loaded
+  const influencedData = months.map(m => {
+    const j = _influencedJunction.find(d => d.month === m);
+    if (j) return +j.arr;
+    const r = _influenceData.find(d => d.month === m && d.type === 'influenced');
+    return r ? +r.arr : 0;
+  });
 
   // % of Rillet revenue that is influenced (excl. sourced)
   const pctInfluenced = months.map(m => {
@@ -1949,10 +1975,42 @@ function initInfluenceChart() {
 }
 
 // ─────────────────────────────────────────────
+// PARTNER INFLUENCE LEADERBOARD
+// ─────────────────────────────────────────────
+function renderInfluenceLeaderboard() {
+  const tbody = document.getElementById('influenceLBBody');
+  if (!tbody) return;
+  if (!_influencePartnerLB.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="padding:12px 10px;color:#475569;">No data</td></tr>';
+    return;
+  }
+  const curMonth = new Date().toISOString().slice(0,7);
+  // Aggregate by partner across all months
+  const byPartner = {};
+  _influencePartnerLB.forEach(r => {
+    if (!byPartner[r.partner]) byPartner[r.partner] = { ytdArr: 0, ytdDeals: 0, mtdArr: 0 };
+    byPartner[r.partner].ytdArr   += +r.arr;
+    byPartner[r.partner].ytdDeals += +r.deals;
+    if (r.month === curMonth) byPartner[r.partner].mtdArr += +r.arr;
+  });
+  const rows = Object.entries(byPartner)
+    .sort((a,b) => b[1].ytdArr - a[1].ytdArr);
+  tbody.innerHTML = rows.map(([partner, d]) => `
+    <tr style="border-bottom:1px solid #0f172a;">
+      <td style="padding:7px 10px;color:#e2e8f0;">${partner}</td>
+      <td style="padding:7px 10px;text-align:right;color:#94a3b8;">${d.ytdDeals}</td>
+      <td style="padding:7px 10px;text-align:right;color:#e2e8f0;font-weight:600;">${fmt$(d.ytdArr)}</td>
+      <td style="padding:7px 10px;text-align:right;color:${d.mtdArr>0?'#06b6d4':'#475569'};">${d.mtdArr>0?fmt$(d.mtdArr):'—'}</td>
+    </tr>`).join('');
+}
+
+// ─────────────────────────────────────────────
 // REVENUE BY ORIGINATION LAG CHART
 // ─────────────────────────────────────────────
 let _cohortData = [];
 let _influenceData = [];
+let _influencedJunction = [];   // [{month, deals, arr}] deduped from Partner_Influence__c
+let _influencePartnerLB = [];   // [{partner, month, deals, arr}]
 let _rilletCohort = [];
 let _rilletTotal = {};
 
@@ -2356,8 +2414,10 @@ function updateKpiCards() {
     document.getElementById('kpi-pct-sub').textContent = ml;
   }
 
-  const influencedMtd = _influenceData.find(r => r.month === curMonth && r.type === 'influenced');
-  const inflArrMtd = influencedMtd ? influencedMtd.arr : 0;
+  // Prefer junction-based influenced (deduped); fall back to boolean
+  const influencedMtdJ = _influencedJunction.find(r => r.month === curMonth);
+  const influencedMtdB = _influenceData.find(r => r.month === curMonth && r.type === 'influenced');
+  const inflArrMtd = influencedMtdJ ? +influencedMtdJ.arr : (influencedMtdB ? +influencedMtdB.arr : 0);
   if (rilletMtd && rilletMtd.arr > 0) {
     document.getElementById('kpi-influenced-pct').textContent     = (inflArrMtd / rilletMtd.arr * 100).toFixed(1) + '%';
     document.getElementById('kpi-influenced-pct-sub').textContent = `${fmt$(inflArrMtd)} of ${fmt$(rilletMtd.arr)} Rillet cARR`;
@@ -2387,7 +2447,10 @@ function updateKpiCards() {
     document.getElementById('kpi-pct-ytd-sub').textContent = `${firstM}–${ml}`;
   }
 
-  const inflArrYtd = _influenceData.filter(r => r.type === 'influenced').reduce((s,r) => s + r.arr, 0);
+  // Prefer junction-based influenced YTD; fall back to boolean
+  const inflArrYtd = _influencedJunction.length
+    ? _influencedJunction.reduce((s,r) => s + r.arr, 0)
+    : _influenceData.filter(r => r.type === 'influenced').reduce((s,r) => s + r.arr, 0);
   if (rilletYtd > 0) {
     document.getElementById('kpi-influenced-ytd').textContent     = (inflArrYtd / rilletYtd * 100).toFixed(1) + '%';
     document.getElementById('kpi-influenced-ytd-sub').textContent = `${fmt$(inflArrYtd)} of ${fmt$(rilletYtd)} Rillet cARR`;
@@ -2434,7 +2497,9 @@ async function loadDashboard() {
     _dailyPipe    = (data.dailyPipe    || []).map(r => ({ month: r.month, day: +r.day, arr: +(r.arr||0) }));
     _dailyCWAll   = (data.dailyCWAll   || []).map(r => ({ month: r.month, day: +r.day, arr: +(r.arr||0) }));
     _dailyPipeAll = (data.dailyPipeAll || []).map(r => ({ month: r.month, day: +r.day, arr: +(r.arr||0) }));
-    _influenceData = (data.influence || []).map(r => ({ month: r.month, type: r.type, deals: +r.deals, arr: +r.arr }));
+    _influenceData      = (data.influence          || []).map(r => ({ month: r.month, type: r.type, deals: +r.deals, arr: +r.arr }));
+    _influencedJunction = (data.influencedJunction || []).map(r => ({ month: r.month, deals: +r.deals, arr: +r.arr }));
+    _influencePartnerLB = (data.influencePartnerLB || []).map(r => ({ partner: r.partner, month: r.month, deals: +r.deals, arr: +r.arr }));
     _allDeals    = (data.allDeals  || []).map(r => ({
       Id: r.Id, Name: r.Name, StageName: r.StageName, cARR__c: +r.cARR__c, LeadSource: r.LeadSource,
       partner: r.partner, create_month: r.create_month, close_month: r.close_month
@@ -2468,6 +2533,7 @@ async function loadDashboard() {
     initDailyCWChart();
     initDailyPipeChart();
     initInfluenceChart();
+    renderInfluenceLeaderboard();
     initPipelineAccordion();
     updateKpiCards();
 
