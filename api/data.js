@@ -41,8 +41,8 @@ async function getPool() {
       database: CONN,
       trustServerCertificate: false,
     },
-    connectionTimeout: 20000,
-    requestTimeout: 45000,
+    connectionTimeout: 10000,
+    requestTimeout: 25000,
   });
   return pool;
 }
@@ -60,7 +60,8 @@ module.exports = async (req, res) => {
     const Q    = (q) => p.request().query(q).then(r => r.recordset);
     const safeQ = (q) => Q(q).catch(e => { console.warn('query skipped:', e.message); return []; });
 
-    // Run ALL queries in a single Promise.all — eliminates sequential batch overhead
+    // Run ALL queries in a single Promise.all — eliminates sequential batch overhead.
+    // ALL queries use safeQ so a single slow/failed query returns [] instead of crashing everything.
     const [
       lbRec,          // 1
       rilletRec,      // 2
@@ -72,17 +73,17 @@ module.exports = async (req, res) => {
       allDealsRec,    // 8
       rilletCohortRec,// 9
       rilletTotalRec, // 10
-      influenceRec,   // 11 (safeQ — uses Partner_Influenced__c custom field)
+      influenceRec,   // 11
       dailyCWRec,     // 12
       dailyPipeRec,   // 13
       dailyCWAllRec,  // 14
       dailyPipeAllRec,// 15
-      influencedJunctionRec, // 16 (safeQ — uses Partner_Influence__c junction object)
-      influencePartnerLBRec, // 17 (safeQ)
+      influencedJunctionRec, // 16
+      influencePartnerLBRec, // 17
     ] = await Promise.all([
 
       // 1. Partner CW ARR by partner + close month
-      Q(`SELECT FORMAT(o.[CloseDate],'yyyy-MM') as month,
+      safeQ(`SELECT FORMAT(o.[CloseDate],'yyyy-MM') as month,
                 ${PARTNER_NAME} as partner,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as deals
@@ -98,7 +99,7 @@ module.exports = async (req, res) => {
          ORDER BY month, arr DESC`),
 
       // 2. Total Rillet CW ARR + deal count by close month
-      Q(`SELECT FORMAT([CloseDate],'yyyy-MM') as month,
+      safeQ(`SELECT FORMAT([CloseDate],'yyyy-MM') as month,
                 SUM([cARR__c]) as arr,
                 COUNT(*) as deals
          FROM [${CONN}].[Salesforce].[Opportunity]
@@ -109,7 +110,7 @@ module.exports = async (req, res) => {
          ORDER BY month`),
 
       // 3. All originated opps by create month → pipeline sourced area chart
-      Q(`SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as month,
+      safeQ(`SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as month,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as cnt
          FROM [${CONN}].[Salesforce].[Opportunity] o
@@ -120,7 +121,7 @@ module.exports = async (req, res) => {
          ORDER BY month`),
 
       // 4. All originated opps by CreatedDate + partner
-      Q(`SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as month,
+      safeQ(`SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as month,
                 ${PARTNER_NAME} as partner,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as opps
@@ -135,7 +136,7 @@ module.exports = async (req, res) => {
          ORDER BY month, arr DESC`),
 
       // 5. Distinct active company partners per create month
-      Q(`SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as month,
+      safeQ(`SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as month,
                 COUNT(DISTINCT o.[Relevant_Partner__c]) as partners
          FROM [${CONN}].[Salesforce].[Opportunity] o
          WHERE o.[LeadSource] IN ${PARTNER_SOURCES}
@@ -146,7 +147,7 @@ module.exports = async (req, res) => {
          ORDER BY month`),
 
       // 6. All opps by create month + inbound/resell → split chart
-      Q(`SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as month,
+      safeQ(`SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as month,
                 CASE WHEN o.[LeadSource] = 'Partner - Resell' THEN 'resell' ELSE 'inbound' END as type,
                 COUNT(*) as deals,
                 SUM(o.[cARR__c]) as arr
@@ -159,7 +160,7 @@ module.exports = async (req, res) => {
          ORDER BY month`),
 
       // 7. CW by cohort month + close month → revenue by origination lag chart
-      Q(`SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as cohort_month,
+      safeQ(`SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as cohort_month,
                 FORMAT(o.[CloseDate],'yyyy-MM') as close_month,
                 COUNT(*) as deals,
                 SUM(o.[cARR__c]) as arr
@@ -172,7 +173,7 @@ module.exports = async (req, res) => {
          ORDER BY cohort_month, close_month`),
 
       // 8. All opps (all stages) individual records → funnel table + pipeline accordion
-      Q(`SELECT o.[Id], o.[Name], o.[StageName], o.[cARR__c], o.[LeadSource],
+      safeQ(`SELECT o.[Id], o.[Name], o.[StageName], o.[cARR__c], o.[LeadSource],
                 ${PARTNER_NAME} as partner,
                 FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as create_month,
                 FORMAT(o.[CloseDate],'yyyy-MM') as close_month
@@ -184,7 +185,7 @@ module.exports = async (req, res) => {
          ORDER BY o.[CloseDate], o.[cARR__c] DESC`),
 
       // 9. All Rillet CW by cohort+close month → Rillet Overall cohort line (PT-adjusted)
-      Q(`SELECT FORMAT(${PT('[CreatedDate]')},'yyyy-MM') as cohort_month,
+      safeQ(`SELECT FORMAT(${PT('[CreatedDate]')},'yyyy-MM') as cohort_month,
                 FORMAT([CloseDate],'yyyy-MM') as close_month,
                 COUNT(*) as deals,
                 SUM([cARR__c]) as arr
@@ -196,7 +197,7 @@ module.exports = async (req, res) => {
          ORDER BY cohort_month, close_month`),
 
       // 10. All Rillet opps by create month → denominator for Rillet Overall line (PT-adjusted)
-      Q(`SELECT FORMAT(${PT('[CreatedDate]')},'yyyy-MM') as month,
+      safeQ(`SELECT FORMAT(${PT('[CreatedDate]')},'yyyy-MM') as month,
                 COUNT(*) as deals
          FROM [${CONN}].[Salesforce].[Opportunity]
          WHERE [CreatedDate] >= '${START_DATE}'
@@ -221,7 +222,7 @@ module.exports = async (req, res) => {
         ORDER BY month, type`),
 
       // 12. Daily partner CW ARR by day of month
-      Q(`SELECT FORMAT([CloseDate],'yyyy-MM') as month,
+      safeQ(`SELECT FORMAT([CloseDate],'yyyy-MM') as month,
                 DAY([CloseDate]) as day,
                 SUM([cARR__c]) as arr
          FROM [${CONN}].[Salesforce].[Opportunity]
@@ -233,7 +234,7 @@ module.exports = async (req, res) => {
          ORDER BY month, day`),
 
       // 13. Daily partner pipeline by day of month (PT-adjusted)
-      Q(`SELECT FORMAT(${PT('[CreatedDate]')},'yyyy-MM') as month,
+      safeQ(`SELECT FORMAT(${PT('[CreatedDate]')},'yyyy-MM') as month,
                 DAY(${PT('[CreatedDate]')}) as day,
                 SUM([cARR__c]) as arr
          FROM [${CONN}].[Salesforce].[Opportunity]
@@ -244,7 +245,7 @@ module.exports = async (req, res) => {
          ORDER BY month, day`),
 
       // 14. Daily ALL Rillet CW ARR by day of month
-      Q(`SELECT FORMAT([CloseDate],'yyyy-MM') as month,
+      safeQ(`SELECT FORMAT([CloseDate],'yyyy-MM') as month,
                 DAY([CloseDate]) as day,
                 SUM([cARR__c]) as arr
          FROM [${CONN}].[Salesforce].[Opportunity]
@@ -256,7 +257,7 @@ module.exports = async (req, res) => {
          ORDER BY month, day`),
 
       // 15. Daily ALL Rillet pipeline originated by day of month (PT-adjusted)
-      Q(`SELECT FORMAT(${PT('[CreatedDate]')},'yyyy-MM') as month,
+      safeQ(`SELECT FORMAT(${PT('[CreatedDate]')},'yyyy-MM') as month,
                 DAY(${PT('[CreatedDate]')}) as day,
                 SUM([cARR__c]) as arr
          FROM [${CONN}].[Salesforce].[Opportunity]
