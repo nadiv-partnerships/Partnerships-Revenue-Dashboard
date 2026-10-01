@@ -11,7 +11,7 @@
 
 const sql = require('mssql');
 
-const PARTNER_SOURCES = `('Inbound - Partner','Partner - Resell','Outbound - Partner','Partnerships')`;
+const PARTNER_SOURCES = `('Inbound - Partner','Partner - Resell','Outbound - Partner','Partnerships','Event - Partner Hosted')`;
 const START_DATE = '2026-01-01';
 const CONN = 'Salesforce1';
 
