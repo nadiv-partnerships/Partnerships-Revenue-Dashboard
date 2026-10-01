@@ -56,12 +56,32 @@ module.exports = async (req, res) => {
 
   try {
     const p = await getPool();
-    const Q = (q) => p.request().query(q);
+    // safeQ: runs a query and returns recordset, or [] on failure (for optional fields)
+    const Q    = (q) => p.request().query(q).then(r => r.recordset);
+    const safeQ = (q) => Q(q).catch(e => { console.warn('query skipped:', e.message); return []; });
 
-    const [lbRes, rilletRes, plChartRes, plRes, referralRes] = await Promise.all([
+    // Run ALL queries in a single Promise.all — eliminates sequential batch overhead
+    const [
+      lbRec,          // 1
+      rilletRec,      // 2
+      plChartRec,     // 3
+      plRec,          // 4
+      referralRec,    // 5
+      splitRec,       // 6
+      cohortRec,      // 7
+      allDealsRec,    // 8
+      rilletCohortRec,// 9
+      rilletTotalRec, // 10
+      influenceRec,   // 11 (safeQ — uses Partner_Influenced__c custom field)
+      dailyCWRec,     // 12
+      dailyPipeRec,   // 13
+      dailyCWAllRec,  // 14
+      dailyPipeAllRec,// 15
+      influencedJunctionRec, // 16 (safeQ — uses Partner_Influence__c junction object)
+      influencePartnerLBRec, // 17 (safeQ)
+    ] = await Promise.all([
 
-      // 1. Partner CW ARR by partner + close month  →  lbRows + raw monthly totals
-      //    LeadSource-only definition; NULL/person-account partners → 'Unattributed'
+      // 1. Partner CW ARR by partner + close month
       Q(`SELECT FORMAT(o.[CloseDate],'yyyy-MM') as month,
                 ${PARTNER_NAME} as partner,
                 SUM(o.[cARR__c]) as arr,
@@ -77,7 +97,7 @@ module.exports = async (req, res) => {
                   ${PARTNER_NAME}
          ORDER BY month, arr DESC`),
 
-      // 2. Total Rillet CW ARR + deal count by close month  →  % of revenue + avg deal size
+      // 2. Total Rillet CW ARR + deal count by close month
       Q(`SELECT FORMAT([CloseDate],'yyyy-MM') as month,
                 SUM([cARR__c]) as arr,
                 COUNT(*) as deals
@@ -88,7 +108,7 @@ module.exports = async (req, res) => {
          GROUP BY FORMAT([CloseDate],'yyyy-MM')
          ORDER BY month`),
 
-      // 3. All originated opps by CREATE month  →  pipeline sourced area chart (all stages, matches SFDC)
+      // 3. All originated opps by create month → pipeline sourced area chart
       Q(`SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as month,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as cnt
@@ -99,7 +119,7 @@ module.exports = async (req, res) => {
          GROUP BY FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM')
          ORDER BY month`),
 
-      // 4. All originated opps by CreatedDate + partner  →  plRows / pipeline type table / originated leaderboard
+      // 4. All originated opps by CreatedDate + partner
       Q(`SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as month,
                 ${PARTNER_NAME} as partner,
                 SUM(o.[cARR__c]) as arr,
@@ -114,8 +134,7 @@ module.exports = async (req, res) => {
                   ${PARTNER_NAME}
          ORDER BY month, arr DESC`),
 
-      // 5. Distinct active company partners per create month  →  referral activity chart
-      //    Keep person-account filter here: we want real company partner count
+      // 5. Distinct active company partners per create month
       Q(`SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as month,
                 COUNT(DISTINCT o.[Relevant_Partner__c]) as partners
          FROM [${CONN}].[Salesforce].[Opportunity] o
@@ -125,9 +144,6 @@ module.exports = async (req, res) => {
            AND o.[Relevant_Partner__c] NOT LIKE '0018a%'
          GROUP BY FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM')
          ORDER BY month`),
-    ]);
-
-    const [splitRes, cohortRes, allDealsRes] = await Promise.all([
 
       // 6. All opps by create month + inbound/resell → split chart
       Q(`SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as month,
@@ -166,14 +182,29 @@ module.exports = async (req, res) => {
            AND o.[CreatedDate] >= '${START_DATE}'
            AND o.[Relevant_Partner__c] IS NOT NULL
          ORDER BY o.[CloseDate], o.[cARR__c] DESC`),
-    ]);
 
-    // 11. Sourced vs influenced CW by close month (mutually exclusive)
-    // Wrapped in try/catch so a bad field name doesn't crash the whole endpoint
-    let influenceRec = [];
-    try {
-      const influenceRes = await Q(`
-        SELECT FORMAT(o.[CloseDate],'yyyy-MM') as month,
+      // 9. All Rillet CW by cohort+close month → Rillet Overall cohort line (PT-adjusted)
+      Q(`SELECT FORMAT(${PT('[CreatedDate]')},'yyyy-MM') as cohort_month,
+                FORMAT([CloseDate],'yyyy-MM') as close_month,
+                COUNT(*) as deals,
+                SUM([cARR__c]) as arr
+         FROM [${CONN}].[Salesforce].[Opportunity]
+         WHERE [StageName] = 'Closed Won'
+           AND [CreatedDate] >= '${START_DATE}'
+           AND [CloseDate] >= [CreatedDate]
+         GROUP BY FORMAT(${PT('[CreatedDate]')},'yyyy-MM'), FORMAT([CloseDate],'yyyy-MM')
+         ORDER BY cohort_month, close_month`),
+
+      // 10. All Rillet opps by create month → denominator for Rillet Overall line (PT-adjusted)
+      Q(`SELECT FORMAT(${PT('[CreatedDate]')},'yyyy-MM') as month,
+                COUNT(*) as deals
+         FROM [${CONN}].[Salesforce].[Opportunity]
+         WHERE [CreatedDate] >= '${START_DATE}'
+         GROUP BY FORMAT(${PT('[CreatedDate]')},'yyyy-MM')
+         ORDER BY month`),
+
+      // 11. Sourced vs influenced CW by close month (uses Partner_Influenced__c custom field)
+      safeQ(`SELECT FORMAT(o.[CloseDate],'yyyy-MM') as month,
                CASE WHEN o.[LeadSource] IN ${PARTNER_SOURCES} THEN 'sourced' ELSE 'influenced' END as type,
                COUNT(*) as deals,
                SUM(o.[cARR__c]) as arr
@@ -187,13 +218,7 @@ module.exports = async (req, res) => {
           )
         GROUP BY FORMAT(o.[CloseDate],'yyyy-MM'),
                  CASE WHEN o.[LeadSource] IN ${PARTNER_SOURCES} THEN 'sourced' ELSE 'influenced' END
-        ORDER BY month, type`);
-      influenceRec = influenceRes.recordset;
-    } catch (e) {
-      console.warn('influence query failed (Partner_Influenced__c may not exist):', e.message);
-    }
-
-    const [dailyCWRes, dailyPipeRes, dailyCWAllRes, dailyPipeAllRes] = await Promise.all([
+        ORDER BY month, type`),
 
       // 12. Daily partner CW ARR by day of month
       Q(`SELECT FORMAT([CloseDate],'yyyy-MM') as month,
@@ -238,16 +263,9 @@ module.exports = async (req, res) => {
          WHERE [CreatedDate] >= '${START_DATE}'
          GROUP BY FORMAT(${PT('[CreatedDate]')},'yyyy-MM'), DAY(${PT('[CreatedDate]')})
          ORDER BY month, day`),
-    ]);
 
-    // 16 & 17. Partner Influence junction object queries
-    let influencedJunctionRec = [], influencePartnerLBRec = [];
-    try {
-      const [ijRes, iplbRes] = await Promise.all([
-
-        // 16. Influenced CW by close month from junction object
-        //     (Boolean union is merged server-side with Q11 boolean data)
-        Q(`SELECT FORMAT(o.[CloseDate],'yyyy-MM') as month,
+      // 16. Influenced CW by close month from junction object (safeQ — junction may not have all months)
+      safeQ(`SELECT FORMAT(o.[CloseDate],'yyyy-MM') as month,
                   COUNT(DISTINCT o.[Id]) as deals,
                   SUM(o.[cARR__c]) as arr
            FROM [${CONN}].[Salesforce].[Partner_Influence__c] pi
@@ -260,8 +278,8 @@ module.exports = async (req, res) => {
            GROUP BY FORMAT(o.[CloseDate],'yyyy-MM')
            ORDER BY month`),
 
-        // 17. Influenced CW by influencing partner + close month (each partner gets full deal credit)
-        Q(`SELECT a.[Name] as partner,
+      // 17. Influenced CW by influencing partner + close month
+      safeQ(`SELECT a.[Name] as partner,
                   FORMAT(o.[CloseDate],'yyyy-MM') as month,
                   COUNT(DISTINCT o.[Id]) as deals,
                   SUM(o.[cARR__c]) as arr
@@ -274,54 +292,26 @@ module.exports = async (req, res) => {
              AND pi.[IsDeleted] = 0
            GROUP BY a.[Name], FORMAT(o.[CloseDate],'yyyy-MM')
            ORDER BY month, arr DESC`),
-      ]);
-      influencedJunctionRec = ijRes.recordset;
-      influencePartnerLBRec = iplbRes.recordset;
-    } catch (e) {
-      console.warn('Partner_Influence__c junction queries failed:', e.message);
-    }
-
-    const [rilletCohortRes, rilletTotalRes] = await Promise.all([
-
-      // 9. All Rillet CW by cohort+close month → Rillet Overall cohort line (PT-adjusted)
-      Q(`SELECT FORMAT(${PT('[CreatedDate]')},'yyyy-MM') as cohort_month,
-                FORMAT([CloseDate],'yyyy-MM') as close_month,
-                COUNT(*) as deals,
-                SUM([cARR__c]) as arr
-         FROM [${CONN}].[Salesforce].[Opportunity]
-         WHERE [StageName] = 'Closed Won'
-           AND [CreatedDate] >= '${START_DATE}'
-           AND [CloseDate] >= [CreatedDate]
-         GROUP BY FORMAT(${PT('[CreatedDate]')},'yyyy-MM'), FORMAT([CloseDate],'yyyy-MM')
-         ORDER BY cohort_month, close_month`),
-
-      // 10. All Rillet opps by create month → denominator for Rillet Overall line (PT-adjusted)
-      Q(`SELECT FORMAT(${PT('[CreatedDate]')},'yyyy-MM') as month,
-                COUNT(*) as deals
-         FROM [${CONN}].[Salesforce].[Opportunity]
-         WHERE [CreatedDate] >= '${START_DATE}'
-         GROUP BY FORMAT(${PT('[CreatedDate]')},'yyyy-MM')
-         ORDER BY month`),
     ]);
 
     res.status(200).json({
-      lb:          lbRes.recordset,
-      rillet:      rilletRes.recordset,
-      plChart:     plChartRes.recordset,
-      pl:          plRes.recordset,
-      referral:    referralRes.recordset,
-      split:       splitRes.recordset,
-      cohort:      cohortRes.recordset,
-      allDeals:      allDealsRes.recordset,
-      influence:          influenceRec,              // [{month, type, deals, arr}] sourced|influenced (boolean-based)
-      influencedJunction: influencedJunctionRec,   // [{month, deals, arr}] deduped from Partner_Influence__c
-      influencePartnerLB: influencePartnerLBRec,   // [{partner, month, deals, arr}] per influencing partner
-      rilletCohort:  rilletCohortRes.recordset,
-      rilletTotal:   rilletTotalRes.recordset,
-      dailyCW:       dailyCWRes.recordset,
-      dailyPipe:     dailyPipeRes.recordset,
-      dailyCWAll:    dailyCWAllRes.recordset,
-      dailyPipeAll:  dailyPipeAllRes.recordset,
+      lb:                 lbRec,
+      rillet:             rilletRec,
+      plChart:            plChartRec,
+      pl:                 plRec,
+      referral:           referralRec,
+      split:              splitRec,
+      cohort:             cohortRec,
+      allDeals:           allDealsRec,
+      influence:          influenceRec,
+      influencedJunction: influencedJunctionRec,
+      influencePartnerLB: influencePartnerLBRec,
+      rilletCohort:       rilletCohortRec,
+      rilletTotal:        rilletTotalRec,
+      dailyCW:            dailyCWRec,
+      dailyPipe:          dailyPipeRec,
+      dailyCWAll:         dailyCWAllRec,
+      dailyPipeAll:       dailyPipeAllRec,
       generatedAt: new Date().toISOString(),
     });
 
