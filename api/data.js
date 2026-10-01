@@ -19,9 +19,10 @@ const CONN = 'Salesforce1';
 // Use this wrapper for every CreatedDate grouping; CloseDate is date-only, no wrapper needed.
 const PT = (col) => `DATEADD(hour,-7,${col})`;
 
-// Partner name helper: NULL or person-account (0018a...) → 'Unattributed'
+// Partner name helper: uses CData relationship field traversal (no JOIN needed)
+// o.[Relevant_Partner__r.Name] resolves via Salesforce's built-in lookup without an explicit JOIN.
 const PARTNER_NAME = `CASE WHEN o.[Relevant_Partner__c] IS NULL OR o.[Relevant_Partner__c] LIKE '0018a%'
-                           THEN 'Unattributed' ELSE a.[Name] END`;
+                           THEN 'Unattributed' ELSE o.[Relevant_Partner__r.Name] END`;
 
 let pool = null;
 
@@ -83,14 +84,12 @@ module.exports = async (req, res) => {
       influencePartnerLBRec, // 17
     ] = await Promise.all([
 
-      // 1. Partner CW ARR by partner + close month
+      // 1. Partner CW ARR by partner + close month (no JOIN — uses relationship field traversal)
       safeQ(`/*Q1*/ SELECT FORMAT(o.[CloseDate],'yyyy-MM') as month,
                 ${PARTNER_NAME} as partner,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as deals
          FROM [${CONN}].[Salesforce].[Opportunity] o
-         LEFT JOIN [${CONN}].[Salesforce].[Account] a
-                ON o.[Relevant_Partner__c] = a.[Id]
          WHERE o.[StageName] = 'Closed Won'
            AND o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CloseDate] >= '${START_DATE}'
@@ -121,14 +120,12 @@ module.exports = async (req, res) => {
          GROUP BY FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM')
          ORDER BY month`, 'Q3'),
 
-      // 4. All originated opps by CreatedDate + partner
+      // 4. All originated opps by CreatedDate + partner (no JOIN)
       safeQ(`/*Q4*/ SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as month,
                 ${PARTNER_NAME} as partner,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as opps
          FROM [${CONN}].[Salesforce].[Opportunity] o
-         LEFT JOIN [${CONN}].[Salesforce].[Account] a
-                ON o.[Relevant_Partner__c] = a.[Id]
          WHERE o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
            AND o.[Relevant_Partner__c] IS NOT NULL
@@ -173,13 +170,12 @@ module.exports = async (req, res) => {
          GROUP BY FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM'), FORMAT(o.[CloseDate],'yyyy-MM')
          ORDER BY cohort_month, close_month`, 'Q7'),
 
-      // 8. All opps (all stages) individual records → funnel table + pipeline accordion
+      // 8. All opps (all stages) individual records → funnel table + pipeline accordion (no JOIN)
       safeQ(`/*Q8*/ SELECT o.[Id], o.[Name], o.[StageName], o.[cARR__c], o.[LeadSource],
                 ${PARTNER_NAME} as partner,
                 FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as create_month,
                 FORMAT(o.[CloseDate],'yyyy-MM') as close_month
          FROM [${CONN}].[Salesforce].[Opportunity] o
-         LEFT JOIN [${CONN}].[Salesforce].[Account] a ON o.[Relevant_Partner__c] = a.[Id]
          WHERE o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
            AND o.[Relevant_Partner__c] IS NOT NULL
