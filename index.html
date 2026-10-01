@@ -2610,10 +2610,12 @@ function updateKpiCards() {
     document.getElementById('kpi-pct-ytd-sub').textContent = `${firstM}–${ml}`;
   }
 
-  // YTD: use combined query (boolean OR junction, deduped at SQL level)
-  const inflArrYtd = _influencedJunction.length
-    ? _influencedJunction.reduce((s,r) => s + r.arr, 0)
-    : _influenceData.filter(r => r.type === 'influenced').reduce((s,r) => s + r.arr, 0);
+  // YTD: per-month max(junction, boolean) so historical months (pre-junction) use boolean fallback
+  const inflArrYtd = months.reduce((total, m) => {
+    const j = _influencedJunction.find(d => d.month === m);
+    const b = _influenceData.find(d => d.month === m && d.type === 'influenced');
+    return total + Math.max(j ? +j.arr : 0, b ? +b.arr : 0);
+  }, 0);
   if (rilletYtd > 0) {
     document.getElementById('kpi-influenced-ytd').textContent     = (inflArrYtd / rilletYtd * 100).toFixed(1) + '%';
     document.getElementById('kpi-influenced-ytd-sub').textContent = `${fmt$(inflArrYtd)} of ${fmt$(rilletYtd)} Rillet cARR`;
