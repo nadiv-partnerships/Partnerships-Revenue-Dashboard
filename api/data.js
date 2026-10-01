@@ -19,10 +19,9 @@ const CONN = 'Salesforce1';
 // Use this wrapper for every CreatedDate grouping; CloseDate is date-only, no wrapper needed.
 const PT = (col) => `DATEADD(hour,-7,${col})`;
 
-// Partner name helper: uses CData relationship field traversal (no JOIN needed)
-// o.[Relevant_Partner__r.Name] resolves via Salesforce's built-in lookup without an explicit JOIN.
-const PARTNER_NAME = `CASE WHEN o.[Relevant_Partner__c] IS NULL OR o.[Relevant_Partner__c] LIKE '0018a%'
-                           THEN 'Unattributed' ELSE o.[Relevant_Partner__r.Name] END`;
+// Partner ID expression — used in GROUP BY; names resolved in Node.js via acctMap
+const PARTNER_ID = `CASE WHEN o.[Relevant_Partner__c] IS NULL OR o.[Relevant_Partner__c] LIKE '0018a%'
+                         THEN 'Unattributed' ELSE o.[Relevant_Partner__c] END`;
 
 let pool = null;
 
@@ -82,11 +81,12 @@ module.exports = async (req, res) => {
       dailyPipeAllRec,// 15
       influencedJunctionRec, // 16
       influencePartnerLBRec, // 17
+      acctRec,               // 18 — Account Id→Name lookup (no JOIN; resolved in Node.js)
     ] = await Promise.all([
 
       // 1. Partner CW ARR by partner + close month (no JOIN — uses relationship field traversal)
       safeQ(`/*Q1*/ SELECT FORMAT(o.[CloseDate],'yyyy-MM') as month,
-                ${PARTNER_NAME} as partner,
+                ${PARTNER_ID} as partner_id,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as deals
          FROM [${CONN}].[Salesforce].[Opportunity] o
@@ -95,7 +95,7 @@ module.exports = async (req, res) => {
            AND o.[CloseDate] >= '${START_DATE}'
            AND o.[CloseDate] >= o.[CreatedDate]
          GROUP BY FORMAT(o.[CloseDate],'yyyy-MM'),
-                  ${PARTNER_NAME}
+                  ${PARTNER_ID}
          ORDER BY month, arr DESC`, 'Q1'),
 
       // 2. Total Rillet CW ARR + deal count by close month
@@ -122,7 +122,7 @@ module.exports = async (req, res) => {
 
       // 4. All originated opps by CreatedDate + partner (no JOIN)
       safeQ(`/*Q4*/ SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as month,
-                ${PARTNER_NAME} as partner,
+                ${PARTNER_ID} as partner_id,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as opps
          FROM [${CONN}].[Salesforce].[Opportunity] o
@@ -130,7 +130,7 @@ module.exports = async (req, res) => {
            AND o.[CreatedDate] >= '${START_DATE}'
            AND o.[Relevant_Partner__c] IS NOT NULL
          GROUP BY FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM'),
-                  ${PARTNER_NAME}
+                  ${PARTNER_ID}
          ORDER BY month, arr DESC`, 'Q4'),
 
       // 5. Distinct active company partners per create month
@@ -172,7 +172,7 @@ module.exports = async (req, res) => {
 
       // 8. All opps (all stages) individual records → funnel table + pipeline accordion (no JOIN)
       safeQ(`/*Q8*/ SELECT o.[Id], o.[Name], o.[StageName], o.[cARR__c], o.[LeadSource],
-                ${PARTNER_NAME} as partner,
+                ${PARTNER_ID} as partner_id,
                 FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as create_month,
                 FORMAT(o.[CloseDate],'yyyy-MM') as close_month
          FROM [${CONN}].[Salesforce].[Opportunity] o
@@ -290,17 +290,37 @@ module.exports = async (req, res) => {
              AND pi.[IsDeleted] = 0
            GROUP BY a.[Name], FORMAT(o.[CloseDate],'yyyy-MM')
            ORDER BY month, arr DESC`, 'Q17'),
+
+      // 18. Account Id → Name lookup (simple single-table, no JOIN)
+      //     Used to resolve partner_id → partner name for Q1/Q4/Q8
+      safeQ(`/*Q18*/ SELECT TOP 1000 [Id] as id, [Name] as name
+             FROM [${CONN}].[Salesforce].[Account]
+             WHERE [IsDeleted] = 0
+             ORDER BY [Name]`, 'Q18'),
     ]);
 
+    // Build acctMap: Salesforce Account ID → Account Name
+    const acctMap = {};
+    acctRec.forEach(r => { if (r.id) acctMap[r.id] = r.name; });
+    const resolveName = (id) =>
+      !id || id === 'Unattributed' ? 'Unattributed'
+      : id.startsWith('0018a') ? 'Unattributed'
+      : (acctMap[id] || id);  // fall back to raw ID if name not found
+
+    // Resolve partner_id → partner name in Q1, Q4, Q8 results
+    const lb      = lbRec.map(r => ({ ...r, partner: resolveName(r.partner_id) }));
+    const pl      = plRec.map(r => ({ ...r, partner: resolveName(r.partner_id) }));
+    const allDeals = allDealsRec.map(r => ({ ...r, partner: resolveName(r.partner_id) }));
+
     res.status(200).json({
-      lb:                 lbRec,
+      lb,
       rillet:             rilletRec,
       plChart:            plChartRec,
-      pl:                 plRec,
+      pl,
       referral:           referralRec,
       split:              splitRec,
       cohort:             cohortRec,
-      allDeals:           allDealsRec,
+      allDeals,
       influence:          influenceRec,
       influencedJunction: influencedJunctionRec,
       influencePartnerLB: influencePartnerLBRec,
