@@ -19,9 +19,6 @@ const CONN = 'Salesforce1';
 // Use this wrapper for every CreatedDate grouping; CloseDate is date-only, no wrapper needed.
 const PT = (col) => `DATEADD(hour,-7,${col})`;
 
-// Partner ID expression — used in GROUP BY; names resolved in Node.js via acctMap
-const PARTNER_ID = `CASE WHEN o.[Relevant_Partner__c] IS NULL OR o.[Relevant_Partner__c] LIKE '0018a%'
-                         THEN 'Unattributed' ELSE o.[Relevant_Partner__c] END`;
 
 let pool = null;
 
@@ -84,9 +81,9 @@ module.exports = async (req, res) => {
       acctRec,               // 18 — Account Id→Name lookup (no JOIN; resolved in Node.js)
     ] = await Promise.all([
 
-      // 1. Partner CW ARR by partner + close month (no JOIN — uses relationship field traversal)
+      // 1. Partner CW ARR by partner_id + close month (bare-minimum SQL — no CASE WHEN, no JOIN)
       safeQ(`/*Q1*/ SELECT FORMAT(o.[CloseDate],'yyyy-MM') as month,
-                ${PARTNER_ID} as partner_id,
+                o.[Relevant_Partner__c] as partner_id,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as deals
          FROM [${CONN}].[Salesforce].[Opportunity] o
@@ -94,8 +91,7 @@ module.exports = async (req, res) => {
            AND o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CloseDate] >= '${START_DATE}'
            AND o.[CloseDate] >= o.[CreatedDate]
-         GROUP BY FORMAT(o.[CloseDate],'yyyy-MM'),
-                  ${PARTNER_ID}
+         GROUP BY FORMAT(o.[CloseDate],'yyyy-MM'), o.[Relevant_Partner__c]
          ORDER BY month, arr DESC`, 'Q1'),
 
       // 2. Total Rillet CW ARR + deal count by close month
@@ -120,17 +116,16 @@ module.exports = async (req, res) => {
          GROUP BY FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM')
          ORDER BY month`, 'Q3'),
 
-      // 4. All originated opps by CreatedDate + partner (no JOIN)
+      // 4. All originated opps by CreatedDate + partner_id (bare-minimum SQL)
       safeQ(`/*Q4*/ SELECT FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as month,
-                ${PARTNER_ID} as partner_id,
+                o.[Relevant_Partner__c] as partner_id,
                 SUM(o.[cARR__c]) as arr,
                 COUNT(*) as opps
          FROM [${CONN}].[Salesforce].[Opportunity] o
          WHERE o.[LeadSource] IN ${PARTNER_SOURCES}
            AND o.[CreatedDate] >= '${START_DATE}'
            AND o.[Relevant_Partner__c] IS NOT NULL
-         GROUP BY FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM'),
-                  ${PARTNER_ID}
+         GROUP BY FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM'), o.[Relevant_Partner__c]
          ORDER BY month, arr DESC`, 'Q4'),
 
       // 5. Distinct active company partners per create month
@@ -172,7 +167,7 @@ module.exports = async (req, res) => {
 
       // 8. All opps (all stages) individual records → funnel table + pipeline accordion (no JOIN)
       safeQ(`/*Q8*/ SELECT o.[Id], o.[Name], o.[StageName], o.[cARR__c], o.[LeadSource],
-                ${PARTNER_ID} as partner_id,
+                o.[Relevant_Partner__c] as partner_id,
                 FORMAT(${PT('o.[CreatedDate]')},'yyyy-MM') as create_month,
                 FORMAT(o.[CloseDate],'yyyy-MM') as close_month
          FROM [${CONN}].[Salesforce].[Opportunity] o
