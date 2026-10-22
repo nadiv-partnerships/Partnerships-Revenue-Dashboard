@@ -2611,7 +2611,8 @@ function updateKpiCards() {
   }
 
   // YTD: per-month max(junction, boolean) so historical months (pre-junction) use boolean fallback
-  const inflArrYtd = months.reduce((total, m) => {
+  const ytdMonths = _rilletData.map(r => r.month);
+  const inflArrYtd = ytdMonths.reduce((total, m) => {
     const j = _influencedJunction.find(d => d.month === m);
     const b = _influenceData.find(d => d.month === m && d.type === 'influenced');
     return total + Math.max(j ? +j.arr : 0, b ? +b.arr : 0);

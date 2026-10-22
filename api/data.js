@@ -286,12 +286,9 @@ module.exports = async (req, res) => {
            GROUP BY a.[Name], FORMAT(o.[CloseDate],'yyyy-MM')
            ORDER BY month, arr DESC`, 'Q17'),
 
-      // 18. Account Id → Name lookup (simple single-table, no JOIN)
-      //     Used to resolve partner_id → partner name for Q1/Q4/Q8
-      safeQ(`/*Q18*/ SELECT TOP 1000 [Id] as id, [Name] as name
-             FROM [${CONN}].[Salesforce].[Account]
-             WHERE [IsDeleted] = 0
-             ORDER BY [Name]`, 'Q18'),
+      // 18. Account Id → Name lookup — no WHERE, no ORDER BY (avoids CData sort/filter memory limit)
+      safeQ(`/*Q18*/ SELECT TOP 2000 [Id] as id, [Name] as name
+             FROM [${CONN}].[Salesforce].[Account]`, 'Q18'),
     ]);
 
     // Build acctMap: Salesforce Account ID → Account Name
