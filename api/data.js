@@ -78,7 +78,6 @@ module.exports = async (req, res) => {
       dailyPipeAllRec,// 15
       influencedJunctionRec, // 16
       influencePartnerLBRec, // 17
-      acctRec,               // 18 — Account Id→Name lookup (no JOIN; resolved in Node.js)
     ] = await Promise.all([
 
       // 1. Partner CW ARR by partner_id + close month (bare-minimum SQL — no CASE WHEN, no JOIN)
@@ -286,14 +285,26 @@ module.exports = async (req, res) => {
            GROUP BY a.[Name], FORMAT(o.[CloseDate],'yyyy-MM')
            ORDER BY month, arr DESC`, 'Q17'),
 
-      // 18. Account Id → Name lookup — no WHERE, no ORDER BY (avoids CData sort/filter memory limit)
-      safeQ(`/*Q18*/ SELECT TOP 2000 [Id] as id, [Name] as name
-             FROM [${CONN}].[Salesforce].[Account]`, 'Q18'),
     ]);
 
-    // Build acctMap: Salesforce Account ID → Account Name
+    // Q18: targeted Account name lookup — only fetch accounts that actually appear in deal data.
+    // WHERE Id IN (...) translates directly to SOQL, avoids loading all accounts into CData memory.
     const acctMap = {};
-    acctRec.forEach(r => { if (r.id) acctMap[r.id] = r.name; });
+    const partnerIds = [...new Set([
+      ...lbRec.map(r => r.partner_id),
+      ...plRec.map(r => r.partner_id),
+      ...allDealsRec.map(r => r.partner_id),
+    ].filter(id => id && !id.startsWith('0018a')))];
+
+    if (partnerIds.length > 0) {
+      const idList = partnerIds.map(id => `'${id}'`).join(',');
+      const acctRec = await safeQ(
+        `/*Q18*/ SELECT [Id] as id, [Name] as name
+         FROM [${CONN}].[Salesforce].[Account]
+         WHERE [Id] IN (${idList})`, 'Q18');
+      acctRec.forEach(r => { if (r.id) acctMap[r.id] = r.name; });
+    }
+
     const resolveName = (id) =>
       !id || id === 'Unattributed' ? 'Unattributed'
       : id.startsWith('0018a') ? 'Unattributed'
